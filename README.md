@@ -103,7 +103,6 @@ Once the process is complete, the computer will restart automatically. After log
 If you find this tool helpful and it saved you some time, consider buying me a coffee to support further development! 
 
 [![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://buymeacoffee.com/bartekszczecinski)
-<img width="1280" height="800" alt="Screenshot_ubuntu25 10_2026-07-18_15:01:57" src="https://github.com/user-attachments/assets/7f137a03-afdf-437f-9f29-b73785421cba" />
 <img width="1280" height="800" alt="Screenshot_ubuntu25 10_2026-07-20_10:24:22" src="https://github.com/user-attachments/assets/a24c0ed5-bc2b-4964-97e3-7559b32bdb53" />
 
 ---
