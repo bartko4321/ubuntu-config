@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name[pl_PL]=Konserwacja Systemu
+Name=System Maintenance
+Comment=Skrypt aktualizacji i czyszczenia
+Exec=/bin/bash /home/bartek/.update.sh
+Icon=system-software-update
+Terminal=true
+Categories=System;Utility;
