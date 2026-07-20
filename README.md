@@ -69,7 +69,6 @@ To allow the script to fully utilize its potential and not skip the visual confi
 ├── 📂 bleachbit/          # (Optional) Pre-configured BleachBit settings for root
 ├── 📂 .config/            # (Optional) Your application configuration files (XFCE panel/applets included)
 ├── 📂 .local/             # (Optional) Local app data / scripts
-└── 📂 .icons/             # (Optional) Custom icons / mouse cursors
 ```
 
 ## 🚀 How to Run
