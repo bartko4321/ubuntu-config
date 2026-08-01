@@ -173,7 +173,7 @@ PACKAGES_INSTALL=(
     # Narzędzia systemowe
     vim dconf-editor dconf-cli hunspell-pl bleachbit profile-sync-daemon git build-essential
     unrar-free mc btrfs-progs exfatprogs ntfs-3g os-prober
-    adb fastboot fsarchiver inxi pv rsync
+    adb fastboot fsarchiver inxi pv rsync cdemu-daemon cdemu-client
     p7zip-full makeself zenity innoextract needrestart flatpak timeshift
     # Python
     python3-defusedxml python3-packaging python3-pip python3-tqdm
