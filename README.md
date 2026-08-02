@@ -82,7 +82,7 @@ git clone https://github.com/bartko4321/ubuntu-config.git
 
 ### Step 2: Enter the downloaded folder
 ```bash
-cd Ubuntu-config-cm
+cd Ubuntu-config
 ```
 
 ### Step 3: Make the script executable
