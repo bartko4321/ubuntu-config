@@ -167,7 +167,7 @@ PACKAGES_INSTALL=(
     # Przeglądarki komunikatory
     google-chrome-stable brave-origin
     # Multimedia
-    gmic mixxx kdenlive
+    gmic mixxx kdenlive soundconverter
     # GNOME
     gnome-tweaks gnome-shell-extension-manager
     # Narzędzia systemowe
@@ -226,6 +226,25 @@ if command -v add-apt-repository &>/dev/null \
     fi
 else
     log_warn "Nie udało się dodać PPA zhangsongcui3371/fastfetch — pomijam fastfetch"
+fi
+
+# HandBrake — z PPA stebbins/handbrake-releases (najnowsza wersja);
+# w razie niepowodzenia instalujemy wersję z domyślnych repo (universe)
+log_info "Dodawanie PPA stebbins/handbrake-releases..."
+if command -v add-apt-repository &>/dev/null \
+    && sudo add-apt-repository -y ppa:stebbins/handbrake-releases 2>/dev/null; then
+    wait_for_apt
+    sudo apt-get update -yq
+    if sudo apt-get install -yq handbrake-gtk handbrake-cli; then
+        log_ok "Zainstalowano HandBrake (PPA stebbins)"
+    else
+        log_warn "Instalacja HandBrake z PPA nie powiodła się"
+    fi
+else
+    log_warn "Nie udało się dodać PPA stebbins/handbrake-releases — próbuję wersję z universe"
+    wait_for_apt
+    sudo apt-get install -yq handbrake-gtk handbrake-cli \
+        || log_warn "Instalacja HandBrake nie powiodła się"
 fi
 
 # Flatseal — dostępny wyłącznie jako Flatpak
