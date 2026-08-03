@@ -235,7 +235,7 @@ if command -v add-apt-repository &>/dev/null \
     && sudo add-apt-repository -y ppa:stebbins/handbrake-releases 2>/dev/null; then
     wait_for_apt
     sudo apt-get update -yq
-    if sudo apt-get install -yq handbrake-gtk handbrake-cli; then
+    if sudo apt-get install -yq handbrake handbrake-cli; then
         log_ok "Zainstalowano HandBrake (PPA stebbins)"
     else
         log_warn "Instalacja HandBrake z PPA nie powiodła się"
@@ -243,7 +243,7 @@ if command -v add-apt-repository &>/dev/null \
 else
     log_warn "Nie udało się dodać PPA stebbins/handbrake-releases — próbuję wersję z universe"
     wait_for_apt
-    sudo apt-get install -yq handbrake-gtk handbrake-cli \
+    sudo apt-get install -yq handbrake handbrake-cli \
         || log_warn "Instalacja HandBrake nie powiodła się"
 fi
 
