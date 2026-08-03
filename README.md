@@ -1,6 +1,6 @@
 # 🚀 Linux Ubuntu: Comprehensive Configuration Script
 
-An automated, powerful Bash script designed to transform a clean **Linux Ubuntu** installation with the **XFCE** desktop into a complete, optimized workstation ready for both work and entertainment.
+An automated, powerful Bash script designed to transform a clean **Linux Ubuntu** installation with the **gnome** desktop into a complete, optimized workstation ready for both work and entertainment.
 
 > ⚠️ **Note:** At the end of its execution, the script automatically restarts the system to apply all changes (including kernel modules and Plymouth configuration).
 
@@ -35,12 +35,12 @@ The script performs a full system deployment divided into several logical stages
 * Automatically adds the current user to the `libvirt`, `libvirt-qemu`, and `kvm` groups.
 * Configures and enables **UFW** (via Ubuntu's `gufw` front-end where available) — blocks incoming traffic by default, allows outgoing, and opens the necessary ports for the virtualization network bridge (`virbr0`).
 
-### 🎨 5. XFCE Desktop Personalization
-* **Safe sync:** Copies your pre-made configuration files (`.config`, `.local`, `.icons`) after safely restarting the `XFCE` process — preventing XFCE from overwriting your settings with defaults during shutdown.
+### 🎨 5. gnome Desktop Personalization
+* **Safe sync:** Copies your pre-made configuration files (`.config`, `.local`, `.icons`) after safely restarting the `gnome` process — preventing gnome from overwriting your settings with defaults during shutdown.
 * **User migration:** Automatically scans config files and replaces the old user placeholder (`bartek`) with your current account name.
-* Applies custom **XFCE themes, applets, and desklets** (if provided) via `dconf`/`gsettings`, instead of KDE's `kwriteconfig`/`plasma-apply-*` tools.
+* Applies custom **gnome themes, applets, and desklets** (if provided) via `dconf`/`gsettings`, instead of KDE's `kwriteconfig`/`plasma-apply-*` tools.
 * Configures the **Plymouth** boot splash (using the `bgrt` theme) and hides unnecessary GRUB messages (`quiet splash`).
-* Automatically sets the user avatar (via `AccountsService`/`lightdm`), custom XFCE splash screen, and wallpapers in multiple resolutions for the *Next*-style theme.
+* Automatically sets the user avatar (via `AccountsService`/`lightdm`), custom gnome splash screen, and wallpapers in multiple resolutions for the *Next*-style theme.
 
 ### 🐚 6. Modern Shell (ZSH)
 * Sets **ZSH** as the default user shell.
@@ -52,7 +52,7 @@ The script performs a full system deployment divided into several logical stages
 * Enables regular SSD trimming via `fstrim.timer`.
 * Clears old systemd system logs (`journalctl --vacuum-time=2d`).
 * Sets the GRUB menu timeout to `0` seconds (instant boot).
-* Configures fast and secure DNS servers (Cloudflare `1.1.1.1`) directly in the active **NetworkManager** configuration (same networking stack as on KDE — Ubuntu uses `nm-applet`/`XFCE-settings` on top of it).
+* Configures fast and secure DNS servers (Cloudflare `1.1.1.1`) directly in the active **NetworkManager** configuration (same networking stack as on KDE — Ubuntu uses `nm-applet`/`gnome-settings` on top of it).
 
 ---
 
@@ -67,7 +67,7 @@ To allow the script to fully utilize its potential and not skip the visual confi
 ├── 📄 piwo.png            # (Optional) User avatar image  
 ├── 📄 5120x2880.png       #  Wallpaper
 ├── 📂 bleachbit/          # (Optional) Pre-configured BleachBit settings for root
-├── 📂 .config/            # (Optional) Your application configuration files (XFCE panel/applets included)
+├── 📂 .config/            # (Optional) Your application configuration files (gnome panel/applets included)
 ├── 📂 .local/             # (Optional) Local app data / scripts
 ```
 
@@ -95,7 +95,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-Once the process is complete, the computer will restart automatically. After logging in, you'll be greeted by a fully configured ZSH environment and a customized XFCE desktop!
+Once the process is complete, the computer will restart automatically. After logging in, you'll be greeted by a fully configured ZSH environment and a customized gnome desktop!
 
 ### ☕ Support the Project
 
