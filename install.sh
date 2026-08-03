@@ -173,7 +173,7 @@ PACKAGES_INSTALL=(
     # Narzędzia systemowe
     vim dconf-editor dconf-cli hunspell-pl bleachbit profile-sync-daemon git build-essential
     unrar-free mc btrfs-progs exfatprogs ntfs-3g os-prober
-    adb fastboot fsarchiver inxi pv rsync cdemu-daemon cdemu-client
+    adb fastboot fsarchiver inxi pv rsync
     p7zip-full makeself zenity innoextract needrestart flatpak timeshift
     # Python
     python3-defusedxml python3-packaging python3-pip python3-tqdm
@@ -245,6 +245,22 @@ else
     wait_for_apt
     sudo apt-get install -yq handbrake-gtk handbrake-cli \
         || log_warn "Instalacja HandBrake nie powiodła się"
+fi
+
+# CDEmu (cdemu-daemon, cdemu-client) — niedostępne w domyślnych repo,
+# wymaga PPA cdemu/ppa
+log_info "Dodawanie PPA cdemu/ppa..."
+if command -v add-apt-repository &>/dev/null \
+    && sudo add-apt-repository -y ppa:cdemu/ppa 2>/dev/null; then
+    wait_for_apt
+    sudo apt-get update -yq
+    if sudo apt-get install -yq cdemu-daemon cdemu-client; then
+        log_ok "Zainstalowano CDEmu (PPA cdemu/ppa)"
+    else
+        log_warn "Instalacja CDEmu z PPA nie powiodła się"
+    fi
+else
+    log_warn "Nie udało się dodać PPA cdemu/ppa — pomijam CDEmu"
 fi
 
 # Flatseal — dostępny wyłącznie jako Flatpak
