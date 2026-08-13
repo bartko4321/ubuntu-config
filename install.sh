@@ -21,14 +21,6 @@ log_warn() { echo -e "${WARN}⚠ UWAGA: $*${NC}"; }
 trap 'log_err "Błąd w linii $LINENO. Polecenie: $BASH_COMMAND"' ERR
 
 # --- Odporne "apt-get update" ---
-# Jeśli w /etc/apt/sources.list.d/ zostały martwe wpisy PPA (np. po
-# przerwanym wcześniejszym uruchomieniu tego skryptu, albo PPA które nie ma
-# jeszcze wydania dla bieżącego OS_CODENAME), zwykłe "apt-get update"
-# zwraca błąd i - przez set -e/trap - ubija cały skrypt, mimo że reszta
-# repozytoriów (główne Ubuntu itd.) zaktualizowała się poprawnie.
-# Ta funkcja: próbuje update, a jeśli się nie powiedzie - wyłuskuje z komunikatów
-# błędów adresy zepsutych repozytoriów, usuwa odpowiadające im pliki .list/.sources
-# i ponawia update.
 safe_apt_update() {
     local out rc
     set +e
@@ -70,7 +62,7 @@ safe_apt_update() {
     fi
 }
 
-# --- Zmienna lokalizująca folder ze skryptem (niezależnie skąd jest uruchamiany) ---
+# --- Zmienna lokalizująca folder ze skryptem ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 
 # --- Funkcja zapobiegająca blokadom APT ---
@@ -86,11 +78,6 @@ wait_for_apt() {
 }
 
 # --- Bezpieczne dodawanie PPA + instalacja pakietów ---
-# Jeśli dane PPA nie ma jeszcze wydania dla bieżącego OS_CODENAME (np. bardzo
-# świeży release Ubuntu), "apt-get update" zwróci 404. add-apt-repository samo
-# w sobie kończy się sukcesem (tylko dodaje wpis), więc błąd wychodzi dopiero
-# przy update — dlatego łapiemy go tutaj, usuwamy PPA i jedziemy dalej,
-# zamiast pozwolić, by set -e/trap ubiło cały skrypt.
 add_ppa_and_install() {
     local ppa="$1"; shift
     local packages=("$@")
@@ -130,8 +117,6 @@ DEB_DIR="/tmp/debs_$$"
 wallpaper_PATH="/home/$CURRENT_USER/Dokumenty/wallpaper.jpg"
 LOGIN_WALLPAPER_PATH="/usr/share/backgrounds/custom/login-wallpaper.png"
 
-# Ubuntu ma własny VERSION_CODENAME (np. "wilma"), ale repozytoria (backporty itp.)
-# trzeba dopasowywać do bazowego Ubuntu, dlatego korzystamy z UBUNTU_CODENAME.
 # shellcheck disable=SC1091
 source /etc/os-release
 OS_CODENAME="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
@@ -151,7 +136,6 @@ echo "$CURRENT_USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/99-temp-i
 # ==========================================================
 log_info "Przygotowanie konfiguracji użytkownika..."
 
-# Kopiowanie skryptu aktualizacji (jeśli istnieje)
 if [[ -f "$SCRIPT_DIR/.update.sh" ]]; then
     cp -af "$SCRIPT_DIR/.update.sh" ~/.update.sh
     chmod +x ~/.update.sh
@@ -164,25 +148,18 @@ log_info "Konfiguracja repozytoriów APT..."
 
 wait_for_apt
 
-# Wykomentuj wpisy cdrom (jeśli istnieją)
 sudo sed -i '/cdrom/s/^/#/' /etc/apt/sources.list 2>/dev/null || true
-
-# Dodaj architektury (potrzebne np. dla Wine / 32-bit)
 sudo dpkg --add-architecture i386
 
-# Ubuntu domyślnie już ma włączone universe/multiverse w swoich repo,
-# ale dla pewności (np. na "czystszych" instalacjach) upewniamy się:
 if command -v add-apt-repository &>/dev/null; then
     sudo add-apt-repository -y universe  2>/dev/null || true
     sudo add-apt-repository -y multiverse 2>/dev/null || true
 fi
 
-# Narzędzia potrzebne do konfiguracji kluczy GPG i wykrywania GPU
 wait_for_apt
 safe_apt_update
 sudo apt-get install -yq curl wget gnupg pciutils
 
-# Utworzenie zalecanego katalogu na klucze i wymuszenie dostępu (755)
 sudo mkdir -p /etc/apt/keyrings
 sudo chmod 755 /etc/apt/keyrings
 
@@ -196,16 +173,7 @@ http://dl.google.com/linux/chrome/deb/ stable main" \
         | sudo tee /etc/apt/sources.list.d/google-chrome.list > /dev/null
 fi
 
-# Repozytorium Brave (Origin) - wg https://brave.com/origin/linux/
-# UWAGA: pliki brave-browser-archive-keyring.gpg oraz brave-core.asc hostowane
-# przez Brave na S3 bywają nieaktualne względem klucza, którym faktycznie
-# podpisują InRelease (znany, powtarzający się problem, np.
-# https://github.com/brave/brave-browser/issues/42949 i #52253).
-# Dlatego pobieramy klucz bezpośrednio po jego ID z serwera kluczy.
-# WAŻNE: nowoczesny gpg domyślnie zapisuje nowo tworzony keyring w formacie
-# "keybox" (.kbx), którego apt NIE obsługuje ("unsupported filetype") —
-# dlatego importujemy do tymczasowego GNUPGHOME i EKSPORTUJEMY klucz do
-# klasycznego formatu binarnego OpenPGP, jakiego wymaga apt.
+# Repozytorium Brave
 sudo mkdir -p /usr/share/keyrings
 sudo rm -f /usr/share/keyrings/brave-browser-archive-keyring.gpg
 BRAVE_KEY_ID="0686B78420038257"
@@ -231,15 +199,10 @@ sudo apt-get upgrade -yq
 log_info "Instalacja podstawowych narzędzi i firmware..."
 
 wait_for_apt
-# Linux-firmware.
 sudo apt-get install -yq linux-firmware
 
-# --- Usuwanie zbędnych pakietów ---
 log_info "Usuwanie zbędnych pakietów..."
-PACKAGES_REMOVE=(
-    # nano
-    # imagemagick
-)
+PACKAGES_REMOVE=()
 if [[ ${#PACKAGES_REMOVE[@]} -gt 0 ]]; then
     for pkg in "${PACKAGES_REMOVE[@]}"; do
         if dpkg -l | grep -q "^ii  $pkg "; then
@@ -249,11 +212,10 @@ if [[ ${#PACKAGES_REMOVE[@]} -gt 0 ]]; then
 fi
 sudo apt-get autoremove -yq
 
-# --- Główna instalacja ---
 log_info "Instalacja pakietów głównych..."
 wait_for_apt
 PACKAGES_INSTALL=(
-    # Przeglądarki komunikatory
+    # Przeglądarki i komunikatory
     google-chrome-stable brave-origin
     # Multimedia
     gmic mixxx kdenlive soundconverter
@@ -264,8 +226,8 @@ PACKAGES_INSTALL=(
     unrar-free mc btrfs-progs exfatprogs ntfs-3g os-prober
     adb fastboot fsarchiver inxi pv rsync
     p7zip-full makeself zenity innoextract needrestart flatpak timeshift
-    # Python
-    python3-defusedxml python3-packaging python3-pip python3-tqdm
+    # Python & Pipx (dodano pipx)
+    python3-defusedxml python3-packaging python3-pip pipx python3-tqdm
     # Gaming / GPU
     libayatana-appindicator3-1 gamemode vulkan-tools mangohud
     vkd3d-compiler goverlay winetricks
@@ -279,24 +241,21 @@ PACKAGES_INSTALL=(
 
 sudo apt-get install -yq "${PACKAGES_INSTALL[@]}"
 
-# --- Pakiety niedostępne (lub niepewne) w standardowym apt ---
 log_info "Instalacja pakietów spoza głównych repo (apt-cache / Flatpak / GitHub)..."
 
-# Upewnij się, że Flathub jest już dostępny (flatpak jest instalowany wyżej)
 if command -v flatpak &>/dev/null; then
     sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
 fi
 
-# Telegram Desktop — z PPA atareao
+# Telegram
 log_info "Dodawanie PPA atareao/telegram..."
 add_ppa_and_install "atareao/telegram" telegram || true
 
-# Fastfetch — z PPA zhangsongcui3371/fastfetch
+# Fastfetch
 log_info "Dodawanie PPA zhangsongcui3371/fastfetch..."
 add_ppa_and_install "zhangsongcui3371/fastfetch" fastfetch || true
 
-# HandBrake — z PPA stebbins/handbrake-releases (najnowsza wersja);
-# w razie niepowodzenia instalujemy wersję z domyślnych repo (universe)
+# HandBrake
 log_info "Dodawanie PPA stebbins/handbrake-releases..."
 if ! add_ppa_and_install "stebbins/handbrake-releases" handbrake handbrake-cli; then
     log_warn "PPA stebbins/handbrake-releases niedostępne — próbuję wersję z universe"
@@ -305,10 +264,7 @@ if ! add_ppa_and_install "stebbins/handbrake-releases" handbrake handbrake-cli; 
         || log_warn "Instalacja HandBrake nie powiodła się"
 fi
 
-# CDEmu (cdemu-daemon, cdemu-client) — od Ubuntu 24.10 (Oracular Oriole)
-# pakiety trafiły do oficjalnych repo Debiana/Ubuntu, więc próbujemy najpierw
-# stamtąd; PPA cdemu/ppa (teraz dostarczające głównie gcdemu) traktujemy jako
-# fallback, gdyby czegoś zabrakło w domyślnych repo.
+# CDEmu
 log_info "Instalacja CDEmu z domyślnych repozytoriów..."
 wait_for_apt
 if sudo apt-get install -yq cdemu-daemon cdemu-client; then
@@ -318,7 +274,7 @@ else
     add_ppa_and_install "cdemu/ppa" cdemu-daemon cdemu-client || true
 fi
 
-# Flatseal — dostępny wyłącznie jako Flatpak
+# Flatseal
 if command -v flatpak &>/dev/null; then
     sudo flatpak install -y flathub com.github.tchx84.Flatseal \
         && log_ok "Zainstalowano Flatseal (Flatpak)" \
@@ -327,12 +283,12 @@ else
     log_warn "flatpak nieobecny — nie można zainstalować Flatseal"
 fi
 
-# --- WINE ORAZ 32-BITOWE BIBLIOTEKI DO GIER ---
+# WINE
 log_info "Instalacja Wine "
 wait_for_apt
-sudo apt-get install -yq wine wine64 
+sudo apt-get install -yq wine wine64
 
-# =========================================================
+# ==========================================================
 # WYKRYWANIE GPU: 32-BITOWE BIBLIOTEKI I MODUŁY INITRAMFS
 # ==========================================================
 log_info "Wykrywanie układu graficznego (biblioteki 32-bit oraz moduły jądra)..."
@@ -369,7 +325,7 @@ fi
 log_info "Przebudowa obrazu initramfs..."
 sudo update-initramfs -u
 
-# --- Gear Lever (Flathub) ---
+# --- Gear Lever ---
 log_info "Instalacja Gear Lever z Flathub..."
 sudo flatpak install -y flathub it.mijorus.gearlever || log_warn "Błąd instalacji Gear Lever"
 
@@ -409,7 +365,7 @@ LSFG_VK_URL=$(get_github_deb_url "YuriSizov/ls-fg-vk" "deb")
 if [[ -n "$LSFG_URL" ]]; then download_deb "ls-fg" "$LSFG_URL" "$DEB_DIR/lsfg.deb"; fi
 if [[ -n "$LSFG_VK_URL" ]]; then download_deb "ls-fg-vk" "$LSFG_VK_URL" "$DEB_DIR/lsfg-vk.deb"; fi
 
-# Faugus Launcher — z PPA faugus/faugus-launcher
+# Faugus Launcher
 log_info "Dodawanie PPA faugus/faugus-launcher..."
 if ! add_ppa_and_install "faugus/faugus-launcher" faugus-launcher; then
     log_warn "Nie udało się zainstalować Faugus Launcher z PPA — pomijam"
@@ -438,7 +394,6 @@ sudo apt-get install -yq \
     ovmf dnsmasq \
     bluetooth bluez bluez-firmware bluez-tools ufw
 
-# Serwis libvirt (uruchamiamy PRZED konfiguracją UFW, żeby virbr0 już istniał)
 for svc in libvirtd virtqemud; do
     if systemctl list-unit-files "${svc}.service" 2>/dev/null | grep -q "$svc"; then
         sudo systemctl enable --now "${svc}.service"
@@ -447,7 +402,6 @@ for svc in libvirtd virtqemud; do
     fi
 done
 
-# Upewnij się, że sieć "default" (NAT dla maszyn wirtualnych) istnieje i wystartuje przy boocie
 if ! sudo virsh net-info default &>/dev/null; then
     log_warn "Sieć 'default' nie jest zdefiniowana - definiuję z domyślnego XML..."
     sudo virsh net-define /usr/share/libvirt/networks/default.xml || true
@@ -455,7 +409,6 @@ fi
 sudo virsh net-start default 2>/dev/null || true
 sudo virsh net-autostart default || log_warn "Nie udało się ustawić autostartu sieci 'default' - sprawdź 'virsh net-list --all'."
 
-# UFW
 if command -v ufw &>/dev/null || [[ -x /usr/sbin/ufw ]]; then
     if [[ -f /etc/default/ufw ]]; then
         sudo sed -i 's/^DEFAULT_FORWARD_POLICY=.*/DEFAULT_FORWARD_POLICY="ACCEPT"/' \
@@ -473,7 +426,6 @@ else
     log_warn "ufw niedostępny — pomijam konfigurację firewalla"
 fi
 
-# Grupy libvirt
 for grp in libvirt libvirt-qemu kvm; do
     if getent group "$grp" &>/dev/null; then
         sudo usermod -aG "$grp" "$CURRENT_USER" \
@@ -491,11 +443,9 @@ log_info "Finalizacja i optymalizacja..."
 sudo systemctl enable fstrim.timer || true
 sudo journalctl --vacuum-time=2d || true
 
-# GRUB timeout
 sudo sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub || true
 sudo update-grub
 
-# DNS przez NetworkManager
 ACTIVE_CONN=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null \
     | grep -v "^lo" | head -n 1 | cut -d: -f1 || true)
 if [[ -n "$ACTIVE_CONN" ]]; then
@@ -537,7 +487,7 @@ if command -v zsh &>/dev/null; then
 fi
 
 # ==========================================================
-# 8. KONFIGURACJA WIZUALNA GNOME (pliki, wallpaper, avatar)
+# 8. KONFIGURACJA WIZUALNA GNOME (pliki, wallpaper, rozszerzenia, avatar)
 # ==========================================================
 log_info "Kopiowanie plików konfiguracyjnych..."
 if [[ -d "$SCRIPT_DIR/.config" ]]; then cp -af "$SCRIPT_DIR/.config/." ~/.config/; fi
@@ -553,7 +503,6 @@ fi
 if command -v gsettings >/dev/null 2>&1; then
     log_info "Ustawiam tapetę pulpitu w systemie GNOME..."
 
-    # 1. Ustawienie tła pulpitu na wallpaper.jpg
     if gsettings set org.gnome.desktop.background picture-uri "file://$wallpaper_PATH" 2>/dev/null \
         && gsettings set org.gnome.desktop.background picture-uri-dark "file://$wallpaper_PATH" 2>/dev/null \
         && gsettings set org.gnome.desktop.background picture-options "zoom" 2>/dev/null; then
@@ -562,7 +511,6 @@ if command -v gsettings >/dev/null 2>&1; then
         log_warn "Nie udało się ustawić tapety GNOME."
     fi
 
-    # 2. Ustawienie tła ekranu blokady na login-wallpaper.png (Lock Screen)
     gsettings set org.gnome.desktop.screensaver picture-uri "file://$LOGIN_WALLPAPER_PATH" 2>/dev/null || true
     gsettings set org.gnome.desktop.screensaver picture-uri-dark "file://$LOGIN_WALLPAPER_PATH" 2>/dev/null || true
     gsettings set org.gnome.desktop.screensaver picture-options "zoom" 2>/dev/null || true
@@ -570,20 +518,17 @@ else
     log_warn "gsettings nie znaleziony — pomijam automatyczną zmianę tapety."
 fi
 
-# --- Ekran logowania (GDM) - ustawienie tła przez dconf (metoda wspierana) ---
+# --- Ekran logowania (GDM) ---
 log_info "Ustawianie tła ekranu logowania GDM przez dconf..."
 
 if [[ -f "$SCRIPT_DIR/login-wallpaper.png" ]]; then
     sudo mkdir -p /usr/share/backgrounds/custom
     sudo cp -af "$SCRIPT_DIR/login-wallpaper.png" "$LOGIN_WALLPAPER_PATH"
-    # katalog i plik muszą być czytelne dla usera "gdm"
     sudo chmod 755 /usr/share/backgrounds/custom
     sudo chmod 644 "$LOGIN_WALLPAPER_PATH"
 
     sudo mkdir -p /etc/dconf/profile /etc/dconf/db/gdm.d
 
-    # Profil "gdm" musi istnieć i wskazywać na bazę systemową gdm,
-    # inaczej wpisy w /etc/dconf/db/gdm.d/ nigdy nie zostaną wczytane.
     if [[ ! -f /etc/dconf/profile/gdm ]]; then
         cat <<'EOF' | sudo tee /etc/dconf/profile/gdm > /dev/null
 user-db:user
@@ -614,13 +559,11 @@ if [[ -f "$SCRIPT_DIR/dconf-settings.ini" ]]; then
         log_info "Czyszczenie pliku INI i naprawa uprawnień struktury .config..."
         sed -i 's/\r$//' "$SCRIPT_DIR/dconf-settings.ini"
 
-        # Upewnienie się, że użytkownik posiada katalogi konfiguracyjne
         mkdir -p "$HOME/.config/dconf"
         chown -R "$CURRENT_USER:$CURRENT_USER" "$HOME/.config"
 
         log_info "Wczytywanie ustawień dconf dla użytkownika: $CURRENT_USER"
 
-        # Wczytanie z jawnym wskazaniem na aktywną magistralę D-Bus użytkownika
         export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u "$CURRENT_USER")/bus"
 
         if sudo -u "$CURRENT_USER" dconf load / < "$SCRIPT_DIR/dconf-settings.ini"; then
@@ -633,6 +576,34 @@ if [[ -f "$SCRIPT_DIR/dconf-settings.ini" ]]; then
     fi
 else
     log_warn "Nie znaleziono dconf-settings.ini — pomijam wczytywanie."
+fi
+
+# --- Instalacja rozszerzeń GNOME ---
+log_info "Instalacja narzędzia gnome-extensions-cli oraz rozszerzeń GNOME..."
+if command -v pipx &>/dev/null; then
+    pipx install gnome-extensions-cli --force || true
+
+    GEXT_CMD="$HOME/.local/bin/gext"
+    if command -v gext &>/dev/null; then
+        GEXT_CMD="gext"
+    fi
+
+    if [[ -x "$GEXT_CMD" ]] || command -v gext &>/dev/null; then
+        log_info "Pobieranie i aktywacja rozszerzeń GNOME..."
+        "$GEXT_CMD" install \
+            blur-my-shell@aunetx \
+            clipboard-history@alexsaveau.dev \
+            compiz-alike-magic-lamp-effect@hermes83.github.com \
+            compiz-windows-effect@hermes83.github.com \
+            dash-to-dock@micxgx.gmail.com \
+            netspeedindicator@subashghimire.info.np \
+            weatherpanel@attentivecoder || log_warn "Niektóre rozszerzenia mogły wymagać ponownego zalogowania do aktywacji."
+        log_ok "Instalacja rozszerzeń GNOME zakończona."
+    else
+        log_warn "Nie udało się zlokalizować 'gext' w ścieżce wywoływalnej — pomijam rozszerzenia."
+    fi
+else
+    log_warn "Brak zainstalowanego 'pipx' — pomijam instalację rozszerzeń GNOME."
 fi
 
 # --- Avatar użytkownika ---
