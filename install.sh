@@ -213,10 +213,12 @@ sudo apt-get autoremove -yq
 log_info "Instalacja pakietów głównych..."
 wait_for_apt
 PACKAGES_INSTALL=(
-    # Przeglądarki i komunikatory
-    google-chrome-stable brave-origin
+    # Przeglądarki, poczta i pobieranie
+    google-chrome-stable brave-origin thunderbird qbittorrent
+    # Biuro
+    libreoffice
     # Multimedia
-    gmic mixxx kdenlive soundconverter
+    gmic mixxx kdenlive soundconverter vlc gimp krita qmmp audacity
     # Narzędzia systemowe
     vim dconf-editor dconf-cli hunspell-pl bleachbit profile-sync-daemon git build-essential
     unrar-free mc btrfs-progs exfatprogs ntfs-3g os-prober
@@ -237,11 +239,29 @@ PACKAGES_INSTALL=(
 
 sudo apt-get install -yq "${PACKAGES_INSTALL[@]}"
 
-log_info "Instalacja pakietów spoza głównych repo (apt-cache / Flatpak / GitHub)..."
+log_info "Instalacja pakietów Flatpak..."
 
+# --- Konfiguracja Flatpak oraz instalacja aplikacji Flathub ---
 if command -v flatpak &>/dev/null; then
+    log_info "Konfiguracja repozytorium Flathub..."
     sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
+    
+    # Instalacja Flatseal
+    log_info "Instalacja Flatseal z Flathub..."
+    sudo flatpak install -y flathub com.github.tchx84.Flatseal \
+        && log_ok "Zainstalowano Flatseal (Flatpak)" \
+        || log_warn "Nie udało się zainstalować Flatseal"
+
+    # Instalacja Gear Lever
+    log_info "Instalacja Gear Lever z Flathub..."
+    sudo flatpak install -y flathub it.mijorus.gearlever \
+        && log_ok "Zainstalowano Gear Lever (Flatpak)" \
+        || log_warn "Nie udało się zainstalować Gear Lever"
+else
+    log_warn "flatpak nieobecny — pomijam instalację aplikacji Flatpak"
 fi
+
+log_info "Instalacja pakietów z PPA i zewnętrznych źródeł..."
 
 # Telegram
 log_info "Dodawanie PPA atareao/telegram..."
@@ -268,15 +288,6 @@ if sudo apt-get install -yq cdemu-daemon cdemu-client; then
 else
     log_warn "CDEmu niedostępne w domyślnych repo — próbuję PPA cdemu/ppa..."
     add_ppa_and_install "cdemu/ppa" cdemu-daemon cdemu-client || true
-fi
-
-# Flatseal
-if command -v flatpak &>/dev/null; then
-    sudo flatpak install -y flathub com.github.tchx84.Flatseal \
-        && log_ok "Zainstalowano Flatseal (Flatpak)" \
-        || log_warn "Nie udało się zainstalować Flatseal"
-else
-    log_warn "flatpak nieobecny — nie można zainstalować Flatseal"
 fi
 
 # WINE
@@ -320,10 +331,6 @@ fi
 
 log_info "Przebudowa obrazu initramfs..."
 sudo update-initramfs -u
-
-# --- Gear Lever ---
-log_info "Instalacja Gear Lever z Flathub..."
-sudo flatpak install -y flathub it.mijorus.gearlever || log_warn "Błąd instalacji Gear Lever"
 
 wait_for_apt
 sudo apt-get install -yq "linux-headers-$(uname -r)" \
