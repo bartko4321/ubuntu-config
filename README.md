@@ -2,7 +2,7 @@
 
 An automated, powerful Bash script designed to transform a clean **Linux Ubuntu** installation with the a complete, optimized workstation ready for both work and entertainment.
 
-> ⚠️ **Note:** At the end of its execution, the script automatically restarts the system to apply all changes (including kernel modules and Plymouth configuration).
+> ⚠️ **Note:** At the end of its execution, the script automatically restarts the system to apply all changes 
 
 ---
 
