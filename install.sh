@@ -1,7 +1,6 @@
 #!/bin/bash
 # ==========================================================
 # KOMPLEKSOWY SKRYPT KONFIGURACYJNY SYSTEMU (LINUX Ubuntu)
-# Z wbudowanym ukrywaniem logów, paskiem postępu i obsługą błędów.
 # ==========================================================
 
 set -euo pipefail
