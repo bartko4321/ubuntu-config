@@ -60,11 +60,13 @@ cleanup_on_exit() {
     rm -f "$TMP_LOG"
 }
 trap cleanup_on_exit EXIT
-
+_pick_msg() { [[ "$SCRIPT_LANG" == "pl" ]] && echo "$1" || echo "$2"; }
 log_info() { echo -e "${INFO}==> $*${NC}"; }
 log_ok()   { echo -e "${SUCCESS}✔ $*${NC}"; }
 log_err()  { echo -e "${ERR}✖ BŁĄD: $*${NC}" >&2; }
 log_warn() { echo -e "${WARN}⚠ UWAGA: $*${NC}"; }
+
+trap 'log_err "Błąd w linii $LINENO. Polecenie: $BASH_COMMAND" "Error at line $LINENO. Command: $BASH_COMMAND"' ERR
 
 show_progress() {
     local step=$1
