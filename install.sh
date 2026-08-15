@@ -3,7 +3,7 @@
 # KOMPLEKSOWY SKRYPT KONFIGURACYJNY SYSTEMU (LINUX Ubuntu)
 # ==========================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 detect_system_lang() {
@@ -20,21 +20,34 @@ SCRIPT_LANG="$(detect_system_lang)"
 INFO='\033[0;34m'
 SUCCESS='\033[0;32m'
 WARN='\033[0;33m'
-ERR='\033[0;31m'
+ERROR='\033[0;31m'
 NC='\033[0m'
 
 if [[ "$EUID" -eq 0 ]]; then
     if [[ "$SCRIPT_LANG" == "pl" ]]; then
-        echo -e "${ERR}✘ Nie uruchamiaj skryptu jako root. Uruchom jako zwykły użytkownik z sudo.${NC}"
+        echo -e "${ERROR}✘ Nie uruchamiaj skryptu jako root. Uruchom jako zwykły użytkownik z sudo.${NC}"
     else
-        echo -e "${ERR}✘ Do not run this script as root. Run as a normal user with sudo.${NC}"
+        echo -e "${ERROR}✘ Do not run this script as root. Run as a normal user with sudo.${NC}"
     fi
     exit 1
 fi
 
 sudo -v
 CURRENT_USER=$(whoami)
-echo "$CURRENT_USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/99-temp-installer > /dev/null
+SUDOERS_TMP="$(mktemp)"
+echo "$CURRENT_USER ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS_TMP"
+if sudo visudo -cf "$SUDOERS_TMP"; then
+    sudo install -m 0440 -o root -g root "$SUDOERS_TMP" /etc/sudoers.d/99-temp-installer
+else
+    rm -f "$SUDOERS_TMP"
+    if [[ "$SCRIPT_LANG" == "pl" ]]; then
+        echo -e "${ERROR}✘ Nieprawidłowa składnia reguły sudoers - przerywam.${NC}"
+    else
+        echo -e "${ERROR}✘ Invalid sudoers rule syntax - aborting.${NC}"
+    fi
+    exit 1
+fi
+rm -f "$SUDOERS_TMP"
 
 TMP_LOG="$(mktemp /tmp/install-log.XXXXXX)"
 LOG_FILE="$HOME/install_error_$(date +%Y%m%d_%H%M%S).log"
@@ -51,20 +64,21 @@ cleanup_on_exit() {
         echo -e "\n" >&3
         cp -f "$TMP_LOG" "$LOG_FILE" 2>/dev/null || true
         if [[ "$SCRIPT_LANG" == "pl" ]]; then
-            echo -e "${ERR}✘ Wystąpił błąd (kod: $exit_code). Szczegółowy log zapisano w: $LOG_FILE${NC}" >&3
+            echo -e "${ERROR}✘ Wystąpił błąd (kod: $exit_code). Szczegółowy log zapisano w: $LOG_FILE${NC}" >&3
         else
-            echo -e "${ERR}✘ An error occurred (code: $exit_code). Detailed log saved to: $LOG_FILE${NC}" >&3
+            echo -e "${ERROR}✘ An error occurred (code: $exit_code). Detailed log saved to: $LOG_FILE${NC}" >&3
         fi
     fi
     sudo rm -f /etc/sudoers.d/99-temp-installer 2>/dev/null || true
     rm -f "$TMP_LOG"
 }
 trap cleanup_on_exit EXIT
+
 _pick_msg() { [[ "$SCRIPT_LANG" == "pl" ]] && echo "$1" || echo "$2"; }
-log_info() { echo -e "${INFO}==> $*${NC}"; }
-log_ok()   { echo -e "${SUCCESS}✔ $*${NC}"; }
-log_err()  { echo -e "${ERR}✖ BŁĄD: $*${NC}" >&2; }
-log_warn() { echo -e "${WARN}⚠ UWAGA: $*${NC}"; }
+log_info() { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${INFO}==> $m${NC}"; }
+log_ok()   { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${SUCCESS}✔ $m${NC}"; }
+log_err()  { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${ERROR}✖ $(_pick_msg "BŁĄD" "ERROR"): $m${NC}" >&2; }
+log_warn() { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${WARN}⚠ $(_pick_msg "UWAGA" "WARN"): $m${NC}"; }
 
 trap 'log_err "Błąd w linii $LINENO. Polecenie: $BASH_COMMAND" "Error at line $LINENO. Command: $BASH_COMMAND"' ERR
 
@@ -119,6 +133,11 @@ DEB_DIR="/tmp/debs_$$"
 
 source /etc/os-release
 OS_CODENAME="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
+echo "Wykryty system: ${PRETTY_NAME:-nieznany}, codename: ${OS_CODENAME:-nieznany}"
+if [[ -z "$OS_CODENAME" ]]; then
+    log_warn "Nie udało się wykryć nazwy kodowej dystrybucji - repozytoria PPA mogą nie działać poprawnie." \
+             "Could not detect the distribution codename - PPAs may not work correctly."
+fi
 
 wait_for_apt() {
     sudo systemctl stop packagekit 2>/dev/null || true
@@ -163,16 +182,17 @@ add_ppa_and_install() {
     local ppa="$1"; shift
     local packages=("$@")
     if ! command -v add-apt-repository &>/dev/null; then return 1; fi
-    if sudo add-apt-repository -y "ppa:$ppa" 2>/dev/null; then
-        wait_for_apt
-        if sudo apt-get update -yq; then
-            sudo apt-get install -yq "${packages[@]}" || true
-        else
-            sudo add-apt-repository --remove -y "ppa:$ppa" 2>/dev/null || true
-            wait_for_apt
-            sudo apt-get update -yq || true
-        fi
+    if ! sudo add-apt-repository -y "ppa:$ppa" 2>/dev/null; then return 1; fi
+
+    wait_for_apt
+    if sudo apt-get update -yq && sudo apt-get install -yq "${packages[@]}"; then
+        return 0
     fi
+
+    sudo add-apt-repository --remove -y "ppa:$ppa" 2>/dev/null || true
+    wait_for_apt
+    sudo apt-get update -yq || true
+    return 1
 }
 
 # ==========================================================
@@ -216,19 +236,35 @@ sudo mkdir -p /usr/share/keyrings
 sudo rm -f /usr/share/keyrings/brave-browser-archive-keyring.gpg
 BRAVE_KEY_ID="0686B78420038257"
 BRAVE_GNUPGHOME="$(mktemp -d)"
-if ! gpg --homedir "$BRAVE_GNUPGHOME" --keyserver hkps://keyserver.ubuntu.com --recv-keys "$BRAVE_KEY_ID" 2>/dev/null; then
-    gpg --homedir "$BRAVE_GNUPGHOME" --keyserver hkps://keys.openpgp.org --recv-keys "$BRAVE_KEY_ID"
+BRAVE_KEY_OK=0
+if gpg --homedir "$BRAVE_GNUPGHOME" --keyserver hkps://keyserver.ubuntu.com --recv-keys "$BRAVE_KEY_ID" 2>/dev/null \
+    || gpg --homedir "$BRAVE_GNUPGHOME" --keyserver hkps://keys.openpgp.org --recv-keys "$BRAVE_KEY_ID" 2>/dev/null; then
+    if gpg --homedir "$BRAVE_GNUPGHOME" --export "$BRAVE_KEY_ID" | sudo tee /usr/share/keyrings/brave-browser-archive-keyring.gpg > /dev/null \
+        && [[ -s /usr/share/keyrings/brave-browser-archive-keyring.gpg ]]; then
+        BRAVE_KEY_OK=1
+    fi
 fi
-gpg --homedir "$BRAVE_GNUPGHOME" --export "$BRAVE_KEY_ID" | sudo tee /usr/share/keyrings/brave-browser-archive-keyring.gpg > /dev/null
 rm -rf "$BRAVE_GNUPGHOME"
-sudo chmod 644 /usr/share/keyrings/brave-browser-archive-keyring.gpg
-sudo curl -fsSLo /etc/apt/sources.list.d/brave-browser-release.sources https://brave-browser-apt-release.s3.brave.com/brave-browser.sources
+
+if [[ "$BRAVE_KEY_OK" -eq 1 ]]; then
+    sudo chmod 644 /usr/share/keyrings/brave-browser-archive-keyring.gpg
+    if ! sudo curl -fsSLo /etc/apt/sources.list.d/brave-browser-release.sources https://brave-browser-apt-release.s3.brave.com/brave-browser.sources; then
+        sudo rm -f /usr/share/keyrings/brave-browser-archive-keyring.gpg /etc/apt/sources.list.d/brave-browser-release.sources
+        log_warn "Nie udało się pobrać pliku repozytorium Brave - pomijam dodanie repozytorium Brave." \
+                 "Could not download the Brave repository file - skipping the Brave repository."
+    fi
+else
+    sudo rm -f /usr/share/keyrings/brave-browser-archive-keyring.gpg
+    log_warn "Nie udało się pobrać klucza GPG Brave - pomijam dodanie repozytorium Brave." \
+             "Could not fetch the Brave GPG key - skipping the Brave repository."
+fi
 
 show_progress 3 $TOTAL_STEPS "$MSG_PHASE_1"
 
 wait_for_apt
 safe_apt_update
-sudo apt-get upgrade -yq
+sudo apt-get upgrade -yq || log_warn "Pełna aktualizacja systemu nie w pełni się powiodła - kontynuuję." \
+                                       "Full system upgrade did not fully succeed - continuing."
 sudo apt-get autoremove -yq
 
 # ==========================================================
@@ -237,7 +273,7 @@ sudo apt-get autoremove -yq
 show_progress 4 $TOTAL_STEPS "$MSG_PHASE_2"
 
 wait_for_apt
-sudo apt-get install -yq linux-firmware
+sudo apt-get install -yq linux-firmware || log_warn "Nie udało się zainstalować linux-firmware." "Failed to install linux-firmware."
 
 PACKAGES_INSTALL=(
     google-chrome-stable brave-origin thunderbird qbittorrent
@@ -255,7 +291,20 @@ PACKAGES_INSTALL=(
 )
 
 wait_for_apt
-sudo apt-get install -yq "${PACKAGES_INSTALL[@]}"
+if ! sudo apt-get install -yq "${PACKAGES_INSTALL[@]}"; then
+    log_warn "Instalacja zbiorcza pakietów nie powiodła się - próbuję pojedynczo, aby pominąć tylko wadliwe pakiety." \
+             "Bulk package install failed - retrying one by one to skip only the broken packages."
+    FAILED_PACKAGES=()
+    for pkg in "${PACKAGES_INSTALL[@]}"; do
+        if ! sudo apt-get install -yq "$pkg" > "/tmp/install-${pkg}.log" 2>&1; then
+            FAILED_PACKAGES+=("$pkg")
+        fi
+    done
+    if [[ ${#FAILED_PACKAGES[@]} -gt 0 ]]; then
+        log_warn "Nie udało się zainstalować: ${FAILED_PACKAGES[*]}. Logi w /tmp/install-<pakiet>.log" \
+                 "Failed to install: ${FAILED_PACKAGES[*]}. Logs in /tmp/install-<package>.log"
+    fi
+fi
 
 show_progress 5 $TOTAL_STEPS "$MSG_PHASE_2"
 
@@ -280,7 +329,7 @@ if ! sudo apt-get install -yq cdemu-daemon cdemu-client; then
 fi
 
 wait_for_apt
-sudo apt-get install -yq wine wine64
+sudo apt-get install -yq wine wine64 || log_warn "Nie udało się zainstalować wine/wine64." "Failed to install wine/wine64."
 
 show_progress 7 $TOTAL_STEPS "$MSG_PHASE_2"
 
@@ -288,19 +337,41 @@ VGA_INFO=$(lspci -nn | grep -iE "VGA|3D|Display" || true)
 MODULES_FILE="/etc/initramfs-tools/modules"
 add_module() { grep -q "^$1" "$MODULES_FILE" || echo "$1" | sudo tee -a "$MODULES_FILE" > /dev/null; }
 
+# Wykrywanie niezależne dla każdego dostawcy - obsługuje też układy hybrydowe (np. laptop Intel+NVIDIA)
+HAS_NVIDIA=0; HAS_AMD=0; HAS_INTEL=0
+echo "$VGA_INFO" | grep -iq "NVIDIA" && HAS_NVIDIA=1
+echo "$VGA_INFO" | grep -iq "AMD"    && HAS_AMD=1
+echo "$VGA_INFO" | grep -iq "Intel"  && HAS_INTEL=1
+
 wait_for_apt
-if echo "$VGA_INFO" | grep -iq "NVIDIA"; then
-    sudo apt-get install -yq libnvidia-gl-nvidia-current:i386 2>/dev/null || sudo apt-get install -yq libgl1-nvidia-glvnd-glx:i386 2>/dev/null || true
-    add_module "nvidia" && add_module "nvidia_modeset" && add_module "nvidia_uvm" && add_module "nvidia_drm"
-elif echo "$VGA_INFO" | grep -iq "AMD"; then
-    sudo apt-get install -yq libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386
-    add_module "amdgpu"
-else
-    sudo apt-get install -yq libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386
-    echo "$VGA_INFO" | grep -iq "Intel" && add_module "i915"
+
+# Mesa/Vulkan: potrzebne dla AMD/Intela, oraz jako baza gdy nic nie wykryto
+if [[ "$HAS_AMD" -eq 1 || "$HAS_INTEL" -eq 1 || ( "$HAS_NVIDIA" -eq 0 && "$HAS_AMD" -eq 0 && "$HAS_INTEL" -eq 0 ) ]]; then
+    sudo apt-get install -yq libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386 \
+        || log_warn "Nie udało się zainstalować bibliotek mesa/vulkan i386." "Failed to install mesa/vulkan i386 libraries."
+fi
+[[ "$HAS_AMD" -eq 1 ]]   && add_module "amdgpu"
+[[ "$HAS_INTEL" -eq 1 ]] && add_module "i915"
+
+if [[ "$HAS_NVIDIA" -eq 1 ]]; then
+    # Nazwa pakietu 32-bit zależy od zainstalowanej wersji sterownika (np. libnvidia-gl-570:i386),
+    # więc dobieramy ją dynamicznie na podstawie zainstalowanego pakietu nvidia-driver-XXX.
+    NVIDIA_BRANCH=$(dpkg -l 2>/dev/null | grep -oP '^ii\s+nvidia-driver-\K[0-9]+' | sort -un | tail -1)
+    if [[ -n "$NVIDIA_BRANCH" ]]; then
+        sudo apt-get install -yq "libnvidia-gl-${NVIDIA_BRANCH}:i386" \
+            || log_warn "Nie udało się zainstalować libnvidia-gl-${NVIDIA_BRANCH}:i386." \
+                        "Failed to install libnvidia-gl-${NVIDIA_BRANCH}:i386."
+    else
+        log_warn "Nie wykryto zainstalowanego pakietu nvidia-driver-XXX - pomijam instalację 32-bit libnvidia-gl." \
+                 "No installed nvidia-driver-XXX package detected - skipping 32-bit libnvidia-gl install."
+    fi
+    add_module "nvidia"
+    add_module "nvidia_modeset"
+    add_module "nvidia_uvm"
+    add_module "nvidia_drm"
 fi
 
-sudo update-initramfs -u
+sudo update-initramfs -u || log_warn "Aktualizacja initramfs nie powiodła się." "initramfs update failed."
 wait_for_apt
 sudo apt-get install -yq "linux-headers-$(uname -r)" || true
 
@@ -333,11 +404,13 @@ rm -rf "$DEB_DIR"
 show_progress 9 $TOTAL_STEPS "$MSG_PHASE_3"
 
 wait_for_apt
-sudo apt-get install -yq virt-manager qemu-system qemu-utils libvirt-daemon-system libvirt-clients ovmf dnsmasq bluetooth bluez bluez-firmware bluez-tools ufw
+sudo apt-get install -yq virt-manager qemu-system qemu-utils libvirt-daemon-system libvirt-clients ovmf dnsmasq bluetooth bluez bluez-firmware bluez-tools ufw \
+    || log_warn "Instalacja pakietów wirtualizacji/bluetooth/ufw nie w pełni się powiodła." \
+                "Virtualization/bluetooth/ufw package install did not fully succeed."
 
 for svc in libvirtd virtqemud; do
     if systemctl list-unit-files "${svc}.service" 2>/dev/null | grep -q "$svc"; then
-        sudo systemctl enable --now "${svc}.service"
+        sudo systemctl enable --now "${svc}.service" || log_warn "Nie udało się uruchomić usługi ${svc}." "Failed to start ${svc} service."
         break
     fi
 done
@@ -358,6 +431,15 @@ if command -v ufw &>/dev/null; then
     sudo ufw allow in  on virbr0
     sudo ufw allow out on virbr0
     sudo ufw allow from 192.168.122.0/24
+    # Nie blokuj samych siebie: jeśli działa sshd, port SSH musi zostać otwarty PRZED włączeniem firewalla
+    if dpkg -s openssh-server &>/dev/null || [[ -x /usr/sbin/sshd ]] \
+        || systemctl is-active --quiet ssh 2>/dev/null || systemctl is-active --quiet sshd 2>/dev/null; then
+        sudo ufw allow ssh
+    fi
+    if [[ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ]]; then
+        log_warn "Wykryto aktywną sesję SSH - upewniono się, że port SSH zostanie otwarty przed włączeniem ufw." \
+                 "Active SSH session detected - made sure the SSH port stays open before enabling ufw."
+    fi
     sudo ufw --force enable
 fi
 
@@ -368,7 +450,7 @@ done
 sudo systemctl enable fstrim.timer || true
 sudo journalctl --vacuum-time=2d || true
 sudo sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub || true
-sudo update-grub
+sudo update-grub || log_warn "Aktualizacja GRUB nie powiodła się." "GRUB update failed."
 
 ACTIVE_CONN=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -v "^lo" | head -n 1 | cut -d: -f1 || true)
 if [[ -n "$ACTIVE_CONN" ]]; then
@@ -425,13 +507,22 @@ else
     RESTART_PROMPT="Do you want to restart the system now? [Y/N]: "
 fi
 
-echo -en "${INFO}==> ${RESTART_PROMPT}${NC}" >&3
-read -r RESTART_CHOICE < /dev/tty
-case "$RESTART_CHOICE" in
-    [YyTt]*)
-        systemctl reboot
-        ;;
-    *)
-        exit 0
-        ;;
-esac
+if [[ -e /dev/tty ]] && (exec < /dev/tty) 2>/dev/null; then
+    echo -en "${INFO}==> ${RESTART_PROMPT}${NC}" >&3
+    RESTART_CHOICE=""
+    read -r RESTART_CHOICE < /dev/tty || true
+    case "$RESTART_CHOICE" in
+        [YyTt]*)
+            systemctl reboot
+            ;;
+        *)
+            exit 0
+            ;;
+    esac
+else
+    if [[ "$SCRIPT_LANG" == "pl" ]]; then
+        echo -e "${WARN}⚠ Brak terminala interaktywnego - pomijam pytanie o restart. Uruchom 'sudo reboot' ręcznie.${NC}" >&3
+    else
+        echo -e "${WARN}⚠ No interactive terminal - skipping restart prompt. Run 'sudo reboot' manually.${NC}" >&3
+    fi
+fi
