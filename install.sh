@@ -75,10 +75,10 @@ cleanup_on_exit() {
 trap cleanup_on_exit EXIT
 
 _pick_msg() { [[ "$SCRIPT_LANG" == "pl" ]] && echo "$1" || echo "$2"; }
-log_info() { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${INFO}==> $m${NC}"; }
-log_ok()   { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${SUCCESS}✔ $m${NC}"; }
-log_err()  { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${ERROR}✖ $(_pick_msg "BŁĄD" "ERROR"): $m${NC}" >&2; }
-log_warn() { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${WARN}⚠ $(_pick_msg "UWAGA" "WARN"): $m${NC}"; }
+log_info()  { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${INFO}==> $m${NC}"; }
+log_ok()    { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${SUCCESS}✔ $m${NC}"; }
+log_err()   { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${ERROR}✘ ERROR: $m${NC}"; }
+log_warn()  { local m; m="$(_pick_msg "$1" "$2")"; echo -e "${WARN}⚠ WARN: $m${NC}"; }
 
 trap 'log_err "Błąd w linii $LINENO. Polecenie: $BASH_COMMAND" "Error at line $LINENO. Command: $BASH_COMMAND"' ERR
 
@@ -134,11 +134,6 @@ DEB_DIR="/tmp/debs_$$"
 source /etc/os-release
 OS_CODENAME="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
 echo "Wykryty system: ${PRETTY_NAME:-nieznany}, codename: ${OS_CODENAME:-nieznany}"
-if [[ -z "$OS_CODENAME" ]]; then
-    log_warn "Nie udało się wykryć nazwy kodowej dystrybucji - repozytoria PPA mogą nie działać poprawnie." \
-             "Could not detect the distribution codename - PPAs may not work correctly."
-fi
-
 wait_for_apt() {
     sudo systemctl stop packagekit 2>/dev/null || true
     while sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || \
@@ -250,21 +245,16 @@ if [[ "$BRAVE_KEY_OK" -eq 1 ]]; then
     sudo chmod 644 /usr/share/keyrings/brave-browser-archive-keyring.gpg
     if ! sudo curl -fsSLo /etc/apt/sources.list.d/brave-browser-release.sources https://brave-browser-apt-release.s3.brave.com/brave-browser.sources; then
         sudo rm -f /usr/share/keyrings/brave-browser-archive-keyring.gpg /etc/apt/sources.list.d/brave-browser-release.sources
-        log_warn "Nie udało się pobrać pliku repozytorium Brave - pomijam dodanie repozytorium Brave." \
-                 "Could not download the Brave repository file - skipping the Brave repository."
     fi
 else
     sudo rm -f /usr/share/keyrings/brave-browser-archive-keyring.gpg
-    log_warn "Nie udało się pobrać klucza GPG Brave - pomijam dodanie repozytorium Brave." \
-             "Could not fetch the Brave GPG key - skipping the Brave repository."
 fi
 
 show_progress 3 $TOTAL_STEPS "$MSG_PHASE_1"
 
 wait_for_apt
 safe_apt_update
-sudo apt-get upgrade -yq || log_warn "Pełna aktualizacja systemu nie w pełni się powiodła - kontynuuję." \
-                                       "Full system upgrade did not fully succeed - continuing."
+sudo apt-get upgrade -yq || true
 sudo apt-get autoremove -yq
 
 # ==========================================================
@@ -273,7 +263,7 @@ sudo apt-get autoremove -yq
 show_progress 4 $TOTAL_STEPS "$MSG_PHASE_2"
 
 wait_for_apt
-sudo apt-get install -yq linux-firmware || log_warn "Nie udało się zainstalować linux-firmware." "Failed to install linux-firmware."
+sudo apt-get install -yq linux-firmware || true
 
 PACKAGES_INSTALL=(
     google-chrome-stable brave-origin thunderbird qbittorrent
@@ -292,18 +282,12 @@ PACKAGES_INSTALL=(
 
 wait_for_apt
 if ! sudo apt-get install -yq "${PACKAGES_INSTALL[@]}"; then
-    log_warn "Instalacja zbiorcza pakietów nie powiodła się - próbuję pojedynczo, aby pominąć tylko wadliwe pakiety." \
-             "Bulk package install failed - retrying one by one to skip only the broken packages."
     FAILED_PACKAGES=()
     for pkg in "${PACKAGES_INSTALL[@]}"; do
         if ! sudo apt-get install -yq "$pkg" > "/tmp/install-${pkg}.log" 2>&1; then
             FAILED_PACKAGES+=("$pkg")
         fi
     done
-    if [[ ${#FAILED_PACKAGES[@]} -gt 0 ]]; then
-        log_warn "Nie udało się zainstalować: ${FAILED_PACKAGES[*]}. Logi w /tmp/install-<pakiet>.log" \
-                 "Failed to install: ${FAILED_PACKAGES[*]}. Logs in /tmp/install-<package>.log"
-    fi
 fi
 
 show_progress 5 $TOTAL_STEPS "$MSG_PHASE_2"
@@ -329,7 +313,7 @@ if ! sudo apt-get install -yq cdemu-daemon cdemu-client; then
 fi
 
 wait_for_apt
-sudo apt-get install -yq wine wine64 || log_warn "Nie udało się zainstalować wine/wine64." "Failed to install wine/wine64."
+sudo apt-get install -yq wine wine64 || true
 
 show_progress 7 $TOTAL_STEPS "$MSG_PHASE_2"
 
@@ -347,8 +331,7 @@ wait_for_apt
 
 # Mesa/Vulkan: potrzebne dla AMD/Intela, oraz jako baza gdy nic nie wykryto
 if [[ "$HAS_AMD" -eq 1 || "$HAS_INTEL" -eq 1 || ( "$HAS_NVIDIA" -eq 0 && "$HAS_AMD" -eq 0 && "$HAS_INTEL" -eq 0 ) ]]; then
-    sudo apt-get install -yq libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386 \
-        || log_warn "Nie udało się zainstalować bibliotek mesa/vulkan i386." "Failed to install mesa/vulkan i386 libraries."
+    sudo apt-get install -yq libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386 || true
 fi
 [[ "$HAS_AMD" -eq 1 ]]   && add_module "amdgpu"
 [[ "$HAS_INTEL" -eq 1 ]] && add_module "i915"
@@ -358,12 +341,7 @@ if [[ "$HAS_NVIDIA" -eq 1 ]]; then
     # więc dobieramy ją dynamicznie na podstawie zainstalowanego pakietu nvidia-driver-XXX.
     NVIDIA_BRANCH=$(dpkg -l 2>/dev/null | grep -oP '^ii\s+nvidia-driver-\K[0-9]+' | sort -un | tail -1)
     if [[ -n "$NVIDIA_BRANCH" ]]; then
-        sudo apt-get install -yq "libnvidia-gl-${NVIDIA_BRANCH}:i386" \
-            || log_warn "Nie udało się zainstalować libnvidia-gl-${NVIDIA_BRANCH}:i386." \
-                        "Failed to install libnvidia-gl-${NVIDIA_BRANCH}:i386."
-    else
-        log_warn "Nie wykryto zainstalowanego pakietu nvidia-driver-XXX - pomijam instalację 32-bit libnvidia-gl." \
-                 "No installed nvidia-driver-XXX package detected - skipping 32-bit libnvidia-gl install."
+        sudo apt-get install -yq "libnvidia-gl-${NVIDIA_BRANCH}:i386" || true
     fi
     add_module "nvidia"
     add_module "nvidia_modeset"
@@ -371,7 +349,7 @@ if [[ "$HAS_NVIDIA" -eq 1 ]]; then
     add_module "nvidia_drm"
 fi
 
-sudo update-initramfs -u || log_warn "Aktualizacja initramfs nie powiodła się." "initramfs update failed."
+sudo update-initramfs -u || true
 wait_for_apt
 sudo apt-get install -yq "linux-headers-$(uname -r)" || true
 
@@ -404,13 +382,11 @@ rm -rf "$DEB_DIR"
 show_progress 9 $TOTAL_STEPS "$MSG_PHASE_3"
 
 wait_for_apt
-sudo apt-get install -yq virt-manager qemu-system qemu-utils libvirt-daemon-system libvirt-clients ovmf dnsmasq bluetooth bluez bluez-firmware bluez-tools ufw \
-    || log_warn "Instalacja pakietów wirtualizacji/bluetooth/ufw nie w pełni się powiodła." \
-                "Virtualization/bluetooth/ufw package install did not fully succeed."
+sudo apt-get install -yq virt-manager qemu-system qemu-utils libvirt-daemon-system libvirt-clients ovmf dnsmasq bluetooth bluez bluez-firmware bluez-tools ufw || true
 
 for svc in libvirtd virtqemud; do
     if systemctl list-unit-files "${svc}.service" 2>/dev/null | grep -q "$svc"; then
-        sudo systemctl enable --now "${svc}.service" || log_warn "Nie udało się uruchomić usługi ${svc}." "Failed to start ${svc} service."
+        sudo systemctl enable --now "${svc}.service" || true
         break
     fi
 done
@@ -436,10 +412,6 @@ if command -v ufw &>/dev/null; then
         || systemctl is-active --quiet ssh 2>/dev/null || systemctl is-active --quiet sshd 2>/dev/null; then
         sudo ufw allow ssh
     fi
-    if [[ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ]]; then
-        log_warn "Wykryto aktywną sesję SSH - upewniono się, że port SSH zostanie otwarty przed włączeniem ufw." \
-                 "Active SSH session detected - made sure the SSH port stays open before enabling ufw."
-    fi
     sudo ufw --force enable
 fi
 
@@ -450,7 +422,7 @@ done
 sudo systemctl enable fstrim.timer || true
 sudo journalctl --vacuum-time=2d || true
 sudo sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub || true
-sudo update-grub || log_warn "Aktualizacja GRUB nie powiodła się." "GRUB update failed."
+sudo update-grub || true
 
 ACTIVE_CONN=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -v "^lo" | head -n 1 | cut -d: -f1 || true)
 if [[ -n "$ACTIVE_CONN" ]]; then
