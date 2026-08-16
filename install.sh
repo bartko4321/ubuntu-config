@@ -32,6 +32,7 @@ if [[ "$EUID" -eq 0 ]]; then
     exit 1
 fi
 
+printf '\033[?7h\n'
 sudo -v
 CURRENT_USER=$(whoami)
 SUDOERS_TMP="$(mktemp)"
@@ -321,7 +322,6 @@ VGA_INFO=$(lspci -nn | grep -iE "VGA|3D|Display" || true)
 MODULES_FILE="/etc/initramfs-tools/modules"
 add_module() { grep -q "^$1" "$MODULES_FILE" || echo "$1" | sudo tee -a "$MODULES_FILE" > /dev/null; }
 
-# Wykrywanie niezależne dla każdego dostawcy - obsługuje też układy hybrydowe (np. laptop Intel+NVIDIA)
 HAS_NVIDIA=0; HAS_AMD=0; HAS_INTEL=0
 echo "$VGA_INFO" | grep -iq "NVIDIA" && HAS_NVIDIA=1
 echo "$VGA_INFO" | grep -iq "AMD"    && HAS_AMD=1
@@ -329,7 +329,6 @@ echo "$VGA_INFO" | grep -iq "Intel"  && HAS_INTEL=1
 
 wait_for_apt
 
-# Mesa/Vulkan: potrzebne dla AMD/Intela, oraz jako baza gdy nic nie wykryto
 if [[ "$HAS_AMD" -eq 1 || "$HAS_INTEL" -eq 1 || ( "$HAS_NVIDIA" -eq 0 && "$HAS_AMD" -eq 0 && "$HAS_INTEL" -eq 0 ) ]]; then
     sudo apt-get install -yq libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386 || true
 fi
@@ -337,8 +336,6 @@ fi
 [[ "$HAS_INTEL" -eq 1 ]] && add_module "i915"
 
 if [[ "$HAS_NVIDIA" -eq 1 ]]; then
-    # Nazwa pakietu 32-bit zależy od zainstalowanej wersji sterownika (np. libnvidia-gl-570:i386),
-    # więc dobieramy ją dynamicznie na podstawie zainstalowanego pakietu nvidia-driver-XXX.
     NVIDIA_BRANCH=$(dpkg -l 2>/dev/null | grep -oP '^ii\s+nvidia-driver-\K[0-9]+' | sort -un | tail -1)
     if [[ -n "$NVIDIA_BRANCH" ]]; then
         sudo apt-get install -yq "libnvidia-gl-${NVIDIA_BRANCH}:i386" || true
@@ -407,7 +404,6 @@ if command -v ufw &>/dev/null; then
     sudo ufw allow in  on virbr0
     sudo ufw allow out on virbr0
     sudo ufw allow from 192.168.122.0/24
-    # Nie blokuj samych siebie: jeśli działa sshd, port SSH musi zostać otwarty PRZED włączeniem firewalla
     if dpkg -s openssh-server &>/dev/null || [[ -x /usr/sbin/sshd ]] \
         || systemctl is-active --quiet ssh 2>/dev/null || systemctl is-active --quiet sshd 2>/dev/null; then
         sudo ufw allow ssh
@@ -422,6 +418,7 @@ done
 sudo systemctl enable fstrim.timer || true
 sudo journalctl --vacuum-time=2d || true
 sudo sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub || true
+printf '\r\033[K' >&3
 sudo update-grub || true
 
 ACTIVE_CONN=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -v "^lo" | head -n 1 | cut -d: -f1 || true)
