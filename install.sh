@@ -203,7 +203,7 @@ fi
 
 wait_for_apt
 sudo sed -i '/cdrom/s/^/#/' /etc/apt/sources.list 2>/dev/null || true
-sudo dpkg --add-architecture i386
+sudo dpkg --add-architecture i386 || true
 
 if command -v add-apt-repository &>/dev/null; then
     sudo add-apt-repository -y universe  2>/dev/null || true
@@ -214,7 +214,9 @@ show_progress 1 $TOTAL_STEPS "$MSG_PHASE_1"
 
 wait_for_apt
 safe_apt_update
-sudo apt-get install -yq curl wget gnupg pciutils
+for pkg in curl wget gnupg pciutils; do
+    sudo apt-get install -yq "$pkg" || true
+done
 sudo mkdir -p /etc/apt/keyrings
 sudo chmod 755 /etc/apt/keyrings
 
@@ -256,7 +258,7 @@ show_progress 3 $TOTAL_STEPS "$MSG_PHASE_1"
 wait_for_apt
 safe_apt_update
 sudo apt-get upgrade -yq || true
-sudo apt-get autoremove -yq
+sudo apt-get autoremove -yq || true
 
 # ==========================================================
 # ETAP 2/3: INSTALACJA PAKIETÓW I FLATPAK
@@ -368,7 +370,9 @@ shopt -s nullglob
 DEB_FILES=("$DEB_DIR"/*.deb)
 if [[ ${#DEB_FILES[@]} -gt 0 ]]; then
     wait_for_apt
-    sudo apt-get install -yq "${DEB_FILES[@]}"
+    for deb in "${DEB_FILES[@]}"; do
+        sudo apt-get install -yq "$deb" || true
+    done
 fi
 shopt -u nullglob
 rm -rf "$DEB_DIR"
@@ -398,17 +402,17 @@ show_progress 10 $TOTAL_STEPS "$MSG_PHASE_3"
 
 if command -v ufw &>/dev/null; then
     [[ -f /etc/default/ufw ]] && sudo sed -i 's/^DEFAULT_FORWARD_POLICY=.*/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw || true
-    sudo ufw --force reset
-    sudo ufw default deny incoming
-    sudo ufw default allow outgoing
-    sudo ufw allow in  on virbr0
-    sudo ufw allow out on virbr0
-    sudo ufw allow from 192.168.122.0/24
+    sudo ufw --force reset || true
+    sudo ufw default deny incoming || true
+    sudo ufw default allow outgoing || true
+    sudo ufw allow in  on virbr0 || true
+    sudo ufw allow out on virbr0 || true
+    sudo ufw allow from 192.168.122.0/24 || true
     if dpkg -s openssh-server &>/dev/null || [[ -x /usr/sbin/sshd ]] \
         || systemctl is-active --quiet ssh 2>/dev/null || systemctl is-active --quiet sshd 2>/dev/null; then
-        sudo ufw allow ssh
+        sudo ufw allow ssh || true
     fi
-    sudo ufw --force enable
+    sudo ufw --force enable || true
 fi
 
 for grp in libvirt libvirt-qemu kvm; do
@@ -422,14 +426,14 @@ sudo update-grub || true
 
 ACTIVE_CONN=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -v "^lo" | head -n 1 | cut -d: -f1 || true)
 if [[ -n "$ACTIVE_CONN" ]]; then
-    sudo nmcli connection modify "$ACTIVE_CONN" ipv4.dns "1.1.1.1,1.0.0.1" ipv6.dns "2606:4700:4700::1112,2606:4700:4700::1002"
+    sudo nmcli connection modify "$ACTIVE_CONN" ipv4.dns "1.1.1.1,1.0.0.1" ipv6.dns "2606:4700:4700::1112,2606:4700:4700::1002" || true
     sudo nmcli connection up "$ACTIVE_CONN" || true
 fi
 
 show_progress 11 $TOTAL_STEPS "$MSG_PHASE_3"
 
 if command -v zsh &>/dev/null; then
-    sudo chsh -s /usr/bin/zsh "$CURRENT_USER"
+    sudo chsh -s /usr/bin/zsh "$CURRENT_USER" || true
     if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
         sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || true
     fi
