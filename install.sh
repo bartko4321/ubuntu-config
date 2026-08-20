@@ -120,11 +120,11 @@ show_progress() {
 
 if [[ "$SCRIPT_LANG" == "pl" ]]; then
     MSG_PHASE_1="[1/3] Przygotowanie repozytoriów i aktualizacja systemu..."
-    MSG_PHASE_2="[2/3] Instalacja pakietów systemowych, Flatpak i aplikacji..."
+    MSG_PHASE_2="[2/3] Usuwanie zbędnych pakietów i instalacja aplikacji..."
     MSG_PHASE_3="[3/3] Konfiguracja usług, środowiska ZSH i optymalizacja..."
 else
     MSG_PHASE_1="[1/3] Preparing repositories and updating system..."
-    MSG_PHASE_2="[2/3] Installing system packages, Flatpaks, and apps..."
+    MSG_PHASE_2="[2/3] Removing unwanted packages and installing apps..."
     MSG_PHASE_3="[3/3] Configuring services, ZSH environment, and optimization..."
 fi
 
@@ -260,17 +260,34 @@ safe_apt_update
 sudo apt-get upgrade -yq || true
 sudo apt-get autoremove -yq || true
 
+# ==========================================================
+# ETAP 2/3: USUWANIE PAKIETÓW I INSTALACJA APKLIKACJI
+# ==========================================================
+show_progress 4 $TOTAL_STEPS "$MSG_PHASE_2"
+
+# Pakiety do całkowitego usunięcia z systemu
+PACKAGES_REMOVE=(
+    nano konqueror plasma-browser-integration plasma-vault krdp krfb
+    plasma-thunderbolt kontact kmail kontrast plasma-welcome kaddressbook
+    kdepim-runtime akonadi-server akregator korganizer epiphany decibels
+    gnome-user-docs gnome-contacts gnome-maps gnome-weather gnome-calendar
+    gnome-clocks kwalletmanager evolution evolution-common evolution-plugins
+    evolution-ews
+)
+
+wait_for_apt
+for pkg in "${PACKAGES_REMOVE[@]}"; do
+    sudo apt-get purge -yq "$pkg" 2>/dev/null || true
+done
+sudo apt-get autoremove --purge -yq || true
+
+# Czyszczenie pozostałości po usuniętych programach z katalogu domowego
 rm -rf ~/.local/share/akonadi ~/.local/share/kmail2 ~/.local/share/local-mail ~/.local/share/contacts ~/.local/share/korganizer ~/.local/share/akregator ~/.local/share/kontact ~/.local/share/konqueror
 rm -rf ~/.config/akonadi* ~/.config/kmail* ~/.config/kontact* ~/.config/korganizer* ~/.config/kaddressbook* ~/.config/akregator* ~/.config/emailidentities ~/.config/mailtransports
 rm -rf ~/.cache/akonadi* ~/.cache/kmail* ~/.cache/kontact* ~/.cache/korganizer* ~/.cache/kaddressbook* ~/.cache/akregator* ~/.cache/konqueror*
-rm -rf ~/.local/share/{epiphany,decibels,gnome-user-docs,gnome-contacts,gnome-maps,gnome-weather}
-rm -rf ~/.config/{epiphany,decibels,gnome-user-docs,gnome-contacts,gnome-maps,gnome-weather}
-rm -rf ~/.cache/{epiphany,decibels,gnome-user-docs,gnome-contacts,gnome-maps,gnome-weather}
-
-# ==========================================================
-# ETAP 2/3: INSTALACJA PAKIETÓW I FLATPAK
-# ==========================================================
-show_progress 4 $TOTAL_STEPS "$MSG_PHASE_2"
+rm -rf ~/.local/share/{epiphany,decibels,gnome-user-docs,gnome-contacts,gnome-maps,gnome-weather,gnome-calendar,gnome-clocks,evolution}
+rm -rf ~/.config/{epiphany,decibels,gnome-user-docs,gnome-contacts,gnome-maps,gnome-weather,gnome-calendar,gnome-clocks,evolution}
+rm -rf ~/.cache/{epiphany,decibels,gnome-user-docs,gnome-contacts,gnome-maps,gnome-weather,gnome-calendar,gnome-clocks,evolution}
 
 wait_for_apt
 sudo apt-get install -yq linux-firmware || true
