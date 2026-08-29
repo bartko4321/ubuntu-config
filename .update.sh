@@ -1,15 +1,11 @@
 #!/bin/bash
 
-# Kolory
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# ============================================================
-# WYKRYWANIE JĘZYKA / LANGUAGE DETECTION
-# ============================================================
 detect_lang() {
     local l="${LANG:-}${LANGUAGE:-}${LC_ALL:-}"
     case "$l" in
@@ -19,7 +15,6 @@ detect_lang() {
 }
 LANGCODE=$(detect_lang)
 
-# t <key> -> zwraca przetłumaczony komunikat (bez kolorów)
 t() {
     local key="$1"
     if [ "$LANGCODE" = "pl" ]; then
@@ -137,13 +132,6 @@ t() {
     fi
 }
 
-# ============================================================
-# AKTUALIZACJA ROZSZERZEŃ GNOME SHELL / GNOME SHELL EXTENSIONS UPDATE
-# Rozszerzenia z ~/.local/share/gnome-shell/extensions
-# Korzysta z publicznego API extensions.gnome.org.
-# Działanie "best-effort": w razie jakiegokolwiek błędu dany
-# element jest pomijany, a poprzednia wersja przywracana.
-# ============================================================
 update_gnome_extensions() {
     echo -e "\n${GREEN}$(t ext_section)${NC}"
 
@@ -241,32 +229,25 @@ echo -e "${BLUE}$(t title2)${NC}"
 echo -e "${BLUE}$(t title3)${NC}"
 echo -e "${BLUE}$(t title1)${NC}"
 
-# 1. ZAPYTANIE O HASŁO TYLKO RAZ
 echo -e "${YELLOW}$(t ask_password)${NC}"
 sudo -v
 
-# Podtrzymanie sudo
 while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 SUDO_KEEP_ALIVE_PID=$!
 
 echo -e "\n${GREEN}$(t apt_update)${NC}"
 
-# Używamy apt-get (stabilne dla skryptów) + ukrywamy irytujące komunikaty o i386
 sudo apt-get update 2>&1 | grep -v "nie obsługuje architektury\|Pomijanie pozyskania skonfigurowanego pliku"
 
-# Kontynuacja pełnej aktualizacji (dist-upgrade to odpowiednik full-upgrade w apt-get)
 sudo apt-get dist-upgrade -y
 
-# Aktualizacja Flatpak (jeśli zainstalowany)
 if command -v flatpak &> /dev/null; then
     echo -e "\n${GREEN}$(t flatpak_update)${NC}"
     flatpak update -y
 fi
 
-# Aktualizacja rozszerzeń GNOME Shell
 update_gnome_extensions
 
-# Aktualizacja firmware (fwupd)
 if command -v fwupdmgr &> /dev/null; then
     echo -e "\n${GREEN}$(t firmware_section)${NC}"
     echo -e "${GREEN}$(t firmware_refresh)${NC}"
@@ -285,13 +266,11 @@ echo -e "\n${BLUE}$(t phase1)${NC}"
 echo -e "${GREEN}$(t autoremove)${NC}"
 sudo apt-get autoremove --purge -y
 
-# Deborphan
 if command -v deborphan &> /dev/null; then
     echo -e "${GREEN}$(t deborphan)${NC}"
     sudo apt-get purge $(deborphan) -y 2>/dev/null
 fi
 
-# Aktualizacja kluczy APT
 echo -e "${GREEN}$(t apt_keys)${NC}"
 sudo apt-key net-update 2>/dev/null
 
@@ -301,14 +280,12 @@ sudo apt-get autoclean
 echo -e "${GREEN}$(t ppa_clean)${NC}"
 sudo find /etc/apt/sources.list.d/ -type f -name "*.save" -delete
 
-# Kompleksowe czyszczenie Flatpak (System)
 if command -v flatpak &> /dev/null; then
     echo -e "${GREEN}$(t flatpak_clean_system)${NC}"
     sudo flatpak uninstall --unused --system -y
     sudo flatpak uninstall --unused --delete-data -y 2>/dev/null
     sudo flatpak repair --system
 
-    # Usuwanie nieużywanych repozytoriów (remotes)
     USED_REMOTES=$(flatpak list --columns=origin 2>/dev/null | sort -u)
     ALL_REMOTES=$(flatpak remotes --columns=name 2>/dev/null)
 
@@ -319,12 +296,10 @@ if command -v flatpak &> /dev/null; then
         fi
     done <<< "$ALL_REMOTES"
 
-    # Czyszczenie plików tymczasowych i historii Flatpak
     sudo rm -rf /var/tmp/flatpak-cache-* 2>/dev/null
     sudo find /var/lib/flatpak -name "*.tmp" -delete 2>/dev/null
     sudo rm -f /var/lib/flatpak/history 2>/dev/null
 
-    # INTELIGENTNE CZYSZCZENIE /var/app (tylko osierocone dane)
     echo -e "${GREEN}$(t flatpak_orphan_system)${NC}"
     INSTALLED_FLATPAKS=$(flatpak list --app --columns=application 2>/dev/null)
     if [ -d "/var/app" ]; then
@@ -385,7 +360,6 @@ if command -v flatpak &> /dev/null; then
     rm -rf ~/.local/share/flatpak/repo/tmp/* 2>/dev/null
     rm -f ~/.local/share/flatpak/history 2>/dev/null
 
-    # INTELIGENTNE CZYSZCZENIE ~/.var/app (tylko osierocone dane)
     echo -e "${GREEN}$(t flatpak_orphan_user)${NC}"
     INSTALLED_FLATPAKS=$(flatpak list --app --columns=application 2>/dev/null)
     if [ -d "$HOME/.var/app" ]; then
@@ -412,13 +386,11 @@ if [ -S "/run/user/$USER_ID/bus" ]; then
 fi
 rm -rf "$HOME/.cache/virt-manager" 2>/dev/null
 
-# Zakończenie
 kill $SUDO_KEEP_ALIVE_PID 2>/dev/null
 echo -e "\n${BLUE}$(t title1)${NC}"
 echo -e "${GREEN}$(t done_title)${NC}"
 echo -e "${BLUE}$(t title1)${NC}"
 
-# Sprawdzanie konieczności restartu (np. po aktualizacji kernela)
 echo -e "\n${GREEN}$(t checking_state)${NC}"
 if [ -f /var/run/reboot-required ]; then
     echo -e "\n${RED}******************************************************${NC}"
