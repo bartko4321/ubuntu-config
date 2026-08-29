@@ -30,6 +30,15 @@ t() {
             ask_password) echo "Proszę podać hasło administratora (sudo):" ;;
             apt_update) echo "==> Pełna aktualizacja systemu (APT)..." ;;
             flatpak_update) echo "==> Pełna aktualizacja aplikacji Flatpak..." ;;
+            ext_section) echo "==> Aktualizacja rozszerzeń GNOME Shell..." ;;
+            ext_missing_tools) echo "==> Brak gnome-shell/curl/jq/unzip - pomijam aktualizację rozszerzeń GNOME Shell." ;;
+            ext_updating) echo "Aktualizowanie" ;;
+            ext_updated) echo "Zaktualizowano" ;;
+            ext_up_to_date) echo "==> Wszystkie zainstalowane rozszerzenia GNOME Shell są aktualne." ;;
+            ext_none) echo "==> Brak zainstalowanych rozszerzeń GNOME Shell." ;;
+            ext_download_failed) echo "Błąd aktualizacji" ;;
+            ext_backup_restored) echo "Przywrócono poprzednią wersję po nieudanej aktualizacji" ;;
+            ext_reload_notice) echo "UWAGA: Aby zastosować zaktualizowane rozszerzenia, wyloguj się i zaloguj ponownie (na X11 wystarczy Alt+F2, r, Enter)." ;;
             firmware_section) echo "==> Aktualizacja firmware (fwupd)..." ;;
             firmware_refresh) echo "==> Odświeżanie bazy metadanych firmware..." ;;
             firmware_check) echo "==> Sprawdzanie dostępnych aktualizacji firmware..." ;;
@@ -77,6 +86,15 @@ t() {
             ask_password) echo "Please enter your administrator (sudo) password:" ;;
             apt_update) echo "==> Full system update (APT)..." ;;
             flatpak_update) echo "==> Full Flatpak application update..." ;;
+            ext_section) echo "==> Updating GNOME Shell extensions..." ;;
+            ext_missing_tools) echo "==> gnome-shell/curl/jq/unzip not found - skipping GNOME Shell extensions update." ;;
+            ext_updating) echo "Updating" ;;
+            ext_updated) echo "Updated" ;;
+            ext_up_to_date) echo "==> All installed GNOME Shell extensions are up to date." ;;
+            ext_none) echo "==> No installed GNOME Shell extensions found." ;;
+            ext_download_failed) echo "Update failed" ;;
+            ext_backup_restored) echo "Restored previous version after failed update" ;;
+            ext_reload_notice) echo "NOTE: Log out and back in to apply updated extensions (on X11, Alt+F2, r, Enter is enough)." ;;
             firmware_section) echo "==> Firmware update (fwupd)..." ;;
             firmware_refresh) echo "==> Refreshing firmware metadata..." ;;
             firmware_check) echo "==> Checking for available firmware updates..." ;;
@@ -119,6 +137,105 @@ t() {
     fi
 }
 
+# ============================================================
+# AKTUALIZACJA ROZSZERZEŃ GNOME SHELL / GNOME SHELL EXTENSIONS UPDATE
+# Rozszerzenia z ~/.local/share/gnome-shell/extensions
+# Korzysta z publicznego API extensions.gnome.org.
+# Działanie "best-effort": w razie jakiegokolwiek błędu dany
+# element jest pomijany, a poprzednia wersja przywracana.
+# ============================================================
+update_gnome_extensions() {
+    echo -e "\n${GREEN}$(t ext_section)${NC}"
+
+    if ! command -v gnome-shell &> /dev/null || ! command -v curl &> /dev/null || \
+       ! command -v jq &> /dev/null || ! command -v unzip &> /dev/null; then
+        echo -e "${YELLOW}$(t ext_missing_tools)${NC}"
+        return
+    fi
+
+    local ext_dir="$HOME/.local/share/gnome-shell/extensions"
+    [ -d "$ext_dir" ] || { echo -e "${YELLOW}$(t ext_none)${NC}"; return; }
+
+    local shell_version
+    shell_version=$(gnome-shell --version 2>/dev/null | grep -oP '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+    [ -z "$shell_version" ] && shell_version=$(gnome-shell --version 2>/dev/null | grep -oP '[0-9]+' | head -1)
+
+    local any_found=0
+    local any_updated=0
+    local tmp_root
+    tmp_root=$(mktemp -d)
+
+    for xlet_dir in "$ext_dir"/*; do
+        [ -d "$xlet_dir" ] || continue
+        local meta_file="$xlet_dir/metadata.json"
+        [ -f "$meta_file" ] || continue
+
+        local uuid
+        uuid=$(basename "$xlet_dir")
+        any_found=1
+
+        local info_json
+        info_json=$(curl -fsSL "https://extensions.gnome.org/extension-info/?uuid=${uuid}&shell_version=${shell_version}" 2>/dev/null)
+        [ -z "$info_json" ] && continue
+        echo "$info_json" | jq -e . >/dev/null 2>&1 || continue
+
+        local remote_version
+        remote_version=$(echo "$info_json" | jq -r '.version // empty' 2>/dev/null)
+        local download_path
+        download_path=$(echo "$info_json" | jq -r '.download_url // empty' 2>/dev/null)
+        [ -z "$remote_version" ] || [ -z "$download_path" ] && continue
+
+        local local_version
+        local_version=$(jq -r '.version // empty' "$meta_file" 2>/dev/null)
+
+        if [ -n "$local_version" ] && [ "$local_version" -ge "$remote_version" ] 2>/dev/null; then
+            continue
+        fi
+
+        echo -e "${YELLOW}$(t ext_updating): $uuid${NC}"
+
+        local zip_file="$tmp_root/$uuid.zip"
+        if ! curl -fsSL "https://extensions.gnome.org${download_path}" -o "$zip_file" 2>/dev/null; then
+            echo -e "${RED}$(t ext_download_failed): $uuid${NC}"
+            continue
+        fi
+
+        local extract_dir="$tmp_root/extract_$uuid"
+        mkdir -p "$extract_dir"
+        if ! unzip -qq -o "$zip_file" -d "$extract_dir" 2>/dev/null || [ ! -f "$extract_dir/metadata.json" ]; then
+            echo -e "${RED}$(t ext_download_failed): $uuid${NC}"
+            rm -rf "$extract_dir" "$zip_file"
+            continue
+        fi
+
+        local backup_dir="$tmp_root/backup_$uuid"
+        cp -a "$xlet_dir" "$backup_dir" 2>/dev/null
+
+        if rm -rf "$xlet_dir" && cp -a "$extract_dir" "$xlet_dir"; then
+            [ -d "$xlet_dir/schemas" ] && command -v glib-compile-schemas &> /dev/null && \
+                glib-compile-schemas "$xlet_dir/schemas" 2>/dev/null
+            echo -e "${GREEN}$(t ext_updated): $uuid${NC}"
+            any_updated=1
+        else
+            rm -rf "$xlet_dir"
+            cp -a "$backup_dir" "$xlet_dir" 2>/dev/null
+            echo -e "${RED}$(t ext_download_failed): $uuid - $(t ext_backup_restored)${NC}"
+        fi
+
+        rm -rf "$extract_dir" "$zip_file" "$backup_dir"
+    done
+
+    rm -rf "$tmp_root"
+
+    if [ "$any_found" -eq 0 ]; then
+        echo -e "${YELLOW}$(t ext_none)${NC}"
+    elif [ "$any_updated" -eq 0 ]; then
+        echo -e "${GREEN}$(t ext_up_to_date)${NC}"
+    else
+        echo -e "${YELLOW}$(t ext_reload_notice)${NC}"
+    fi
+}
+
 echo -e "${BLUE}$(t title1)${NC}"
 echo -e "${BLUE}$(t title2)${NC}"
 echo -e "${BLUE}$(t title3)${NC}"
@@ -145,6 +262,9 @@ if command -v flatpak &> /dev/null; then
     echo -e "\n${GREEN}$(t flatpak_update)${NC}"
     flatpak update -y
 fi
+
+# Aktualizacja rozszerzeń GNOME Shell
+update_gnome_extensions
 
 # Aktualizacja firmware (fwupd)
 if command -v fwupdmgr &> /dev/null; then
