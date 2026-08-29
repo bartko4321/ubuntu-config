@@ -480,6 +480,26 @@ mkdir -p ~/.config ~/.local
 if [[ -d "$SCRIPT_DIR/.config" ]]; then cp -af "$SCRIPT_DIR/.config/." ~/.config/; fi
 if [[ -d "$SCRIPT_DIR/.local" ]]; then cp -af "$SCRIPT_DIR/.local/." ~/.local/; fi
 
+if dpkg -s plasma-desktop &>/dev/null || dpkg -s plasma-workspace &>/dev/null; then
+    mkdir -p ~/.config
+    cat > ~/.config/kwalletrc << 'EOF'
+[Wallet]
+Close When Idle=false
+Close on Screensaver=false
+Default Wallet=kdewallet
+Enabled=false
+First Use=false
+Idle Timeout=10
+Launch Manager=false
+Leave Manager Open=false
+Leave Open=true
+Prompt on Open=false
+Use One Wallet=true
+[org.freedesktop.secrets]
+apiEnabled=false
+EOF
+fi
+
 if [[ -d "$SCRIPT_DIR/bleachbit" ]]; then
     sudo mkdir -p /root/.config/bleachbit
     sudo cp -af "$SCRIPT_DIR/bleachbit/." /root/.config/bleachbit/
