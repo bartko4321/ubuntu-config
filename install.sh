@@ -5,6 +5,7 @@
 
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
+export PATH="/usr/sbin:/sbin:$PATH"
 
 detect_system_lang() {
     local sys_lang="${LANG:-}"
@@ -33,22 +34,35 @@ if [[ "$EUID" -eq 0 ]]; then
 fi
 
 printf '\033[?7h\n'
-sudo -v
 CURRENT_USER=$(whoami)
-SUDOERS_TMP="$(mktemp)"
-echo "$CURRENT_USER ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS_TMP"
-if sudo visudo -cf "$SUDOERS_TMP"; then
-    sudo install -m 0440 -o root -g root "$SUDOERS_TMP" /etc/sudoers.d/99-temp-installer
-else
-    rm -f "$SUDOERS_TMP"
-    if [[ "$SCRIPT_LANG" == "pl" ]]; then
-        echo -e "${ERROR}✘ Nieprawidłowa składnia reguły sudoers - przerywam.${NC}"
-    else
-        echo -e "${ERROR}✘ Invalid sudoers rule syntax - aborting.${NC}"
-    fi
-    exit 1
+
+RUN0_NOPASSWD_FILE="/etc/polkit-1/rules.d/51-run0-nopasswd.rules"
+USE_RUN0=0
+if ! command -v visudo >/dev/null 2>&1 || sudo --version 2>/dev/null | grep -qi "run0"; then
+    USE_RUN0=1
 fi
-rm -f "$SUDOERS_TMP"
+
+sudo -v
+
+if [[ "$USE_RUN0" -eq 1 ]]; then
+    printf 'polkit._run0_nopasswd.push("%s");\n' "$CURRENT_USER" | sudo tee "$RUN0_NOPASSWD_FILE" > /dev/null
+    sudo systemctl try-restart polkit 2>/dev/null || true
+else
+    SUDOERS_TMP="$(mktemp)"
+    echo "$CURRENT_USER ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS_TMP"
+    if sudo visudo -cf "$SUDOERS_TMP"; then
+        sudo install -m 0440 -o root -g root "$SUDOERS_TMP" /etc/sudoers.d/99-temp-installer
+    else
+        rm -f "$SUDOERS_TMP"
+        if [[ "$SCRIPT_LANG" == "pl" ]]; then
+            echo -e "${ERROR}✘ Nieprawidłowa składnia reguły sudoers - przerywam.${NC}"
+        else
+            echo -e "${ERROR}✘ Invalid sudoers rule syntax - aborting.${NC}"
+        fi
+        exit 1
+    fi
+    rm -f "$SUDOERS_TMP"
+fi
 
 TMP_LOG="$(mktemp /tmp/install-log.XXXXXX)"
 LOG_FILE="$HOME/install_error_$(date +%Y%m%d_%H%M%S).log"
@@ -70,7 +84,12 @@ cleanup_on_exit() {
             echo -e "${ERROR}✘ An error occurred (code: $exit_code). Detailed log saved to: $LOG_FILE${NC}" >&3
         fi
     fi
-    sudo rm -f /etc/sudoers.d/99-temp-installer 2>/dev/null || true
+    if [[ "${USE_RUN0:-0}" -eq 1 ]]; then
+        sudo rm -f "${RUN0_NOPASSWD_FILE:-/etc/polkit-1/rules.d/51-run0-nopasswd.rules}" 2>/dev/null || true
+        sudo systemctl try-restart polkit 2>/dev/null || true
+    else
+        sudo rm -f /etc/sudoers.d/99-temp-installer 2>/dev/null || true
+    fi
     rm -f "$TMP_LOG"
 }
 trap cleanup_on_exit EXIT
