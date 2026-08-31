@@ -294,7 +294,7 @@ sudo apt-get install -yq linux-firmware || true
 
 PACKAGES_INSTALL=(
     google-chrome-stable brave-origin thunderbird qbittorrent
-    libreoffice gmic mixxx kdenlive soundconverter vlc gimp krita qmmp audacity
+    libreoffice gmic mixxx kdenlive soundconverter gimp krita audacity
     vim dconf-editor dconf-cli hunspell-pl bleachbit profile-sync-daemon git build-essential
     unrar-free mc btrfs-progs exfatprogs ntfs-3g os-prober
     adb fastboot fsarchiver inxi pv rsync
