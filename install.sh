@@ -6,7 +6,7 @@
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export PATH="/usr/sbin:/sbin:$PATH"
-
+ 
 detect_system_lang() {
     local sys_lang="${LANG:-}"
     [[ -z "$sys_lang" ]] && sys_lang="${LC_ALL:-${LC_MESSAGES:-}}"
