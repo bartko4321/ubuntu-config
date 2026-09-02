@@ -8,16 +8,19 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 detect_lang() {
-    local l="${LANG:-}${LANGUAGE:-}${LC_ALL:-}"
+    local l="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+    if [ -z "$l" ] && command -v locale &> /dev/null; then
+        l=$(locale 2>/dev/null | grep -m1 '^LANG=' | cut -d= -f2)
+    fi
     case "$l" in
-        pl_PL*|*pl_PL*|pl*) echo "pl" ;;
+        pl_PL*|pl*) echo "pl" ;;
         *) echo "en" ;;
-    esac
+    esac 
 }
 SCRIPT_LANG=$(detect_lang)
 
 if [ "$SCRIPT_LANG" = "pl" ]; then
-    MSG_TITLE1="  KOMPLEKSOWY SKRYPT AKTUALIZACJI I CZYSZCZENIA       "
+    MSG_TITLE="       KOMPLEKSOWY SKRYPT AKTUALIZACJI I CZYSZCZENIA  "
     MSG_ASK_PASS="Proszę podać hasło administratora (sudo):"
     MSG_PHASE_UPDATE="[1/4] Aktualizacja systemu i aplikacji..."
     MSG_PHASE_CLEAN_SYS="[2/4] Czyszczenie systemowe (sudo)..."
@@ -26,8 +29,9 @@ if [ "$SCRIPT_LANG" = "pl" ]; then
     MSG_DONE="AKTUALIZACJA I CZYSZCZENIE ZAKOŃCZONE!"
     MSG_RESTART_WARN="UWAGA: Zalecany jest restart komputera"
     MSG_NO_RESTART="Restart systemu nie jest aktualnie wymagany."
+    MSG_PRESS_ENTER="Naciśnij Enter, aby zamknąć okno..."
 else
-    MSG_TITLE1="         COMPREHENSIVE UPDATE AND CLEANUP SCRIPT       "
+    MSG_TITLE="         COMPREHENSIVE UPDATE AND CLEANUP SCRIPT       "
     MSG_ASK_PASS="Please enter the administrator (sudo) password:"
     MSG_PHASE_UPDATE="[1/4] Updating system and applications..."
     MSG_PHASE_CLEAN_SYS="[2/4] System cleanup (sudo)..."
@@ -36,6 +40,7 @@ else
     MSG_DONE="UPDATE AND CLEANUP COMPLETE!"
     MSG_RESTART_WARN="WARNING: A system restart is recommended"
     MSG_NO_RESTART="A system restart is not currently required."
+    MSG_PRESS_ENTER="Press Enter to close this window..."
 fi
 
 TMP_LOG="$(mktemp /tmp/update-log.XXXXXX)"
@@ -57,6 +62,7 @@ cleanup_on_exit() {
         fi
     fi
     rm -f "$TMP_LOG"
+    kill "${SUDO_KEEP_ALIVE_PID:-}" 2>/dev/null
 }
 trap cleanup_on_exit EXIT
 
@@ -95,79 +101,8 @@ show_progress() {
     printf "\r\033[K[\033[1;32m%s\033[0;90m%s\033[0m] %3d%% | \033[1;36m%s\033[0m" "$bar_filled" "$bar_empty" "$percent" "$msg" >&3
 }
 
-update_gnome_extensions() {
-    if ! command -v gnome-shell &> /dev/null || ! command -v curl &> /dev/null || \
-       ! command -v jq &> /dev/null || ! command -v unzip &> /dev/null; then
-        return
-    fi
-
-    local ext_dir="$HOME/.local/share/gnome-shell/extensions"
-    [ -d "$ext_dir" ] || return
-
-    local shell_version
-    shell_version=$(gnome-shell --version 2>/dev/null | grep -oP '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
-    [ -z "$shell_version" ] && shell_version=$(gnome-shell --version 2>/dev/null | grep -oP '[0-9]+' | head -1)
-
-    local tmp_root
-    tmp_root=$(mktemp -d)
-
-    for xlet_dir in "$ext_dir"/*; do
-        [ -d "$xlet_dir" ] || continue
-        local meta_file="$xlet_dir/metadata.json"
-        [ -f "$meta_file" ] || continue
-
-        local uuid
-        uuid=$(basename "$xlet_dir")
-
-        local info_json
-        info_json=$(curl -fsSL "https://extensions.gnome.org/extension-info/?uuid=${uuid}&shell_version=${shell_version}" 2>/dev/null)
-        [ -z "$info_json" ] && continue
-        echo "$info_json" | jq -e . >/dev/null 2>&1 || continue
-
-        local remote_version
-        remote_version=$(echo "$info_json" | jq -r '.version // empty' 2>/dev/null)
-        local download_path
-        download_path=$(echo "$info_json" | jq -r '.download_url // empty' 2>/dev/null)
-        [ -z "$remote_version" ] || [ -z "$download_path" ] && continue
-
-        local local_version
-        local_version=$(jq -r '.version // empty' "$meta_file" 2>/dev/null)
-
-        if [ -n "$local_version" ] && [ "$local_version" -ge "$remote_version" ] 2>/dev/null; then
-            continue
-        fi
-
-        local zip_file="$tmp_root/$uuid.zip"
-        if ! curl -fsSL "https://extensions.gnome.org${download_path}" -o "$zip_file" 2>/dev/null; then
-            continue
-        fi
-
-        local extract_dir="$tmp_root/extract_$uuid"
-        mkdir -p "$extract_dir"
-        if ! unzip -qq -o "$zip_file" -d "$extract_dir" 2>/dev/null || [ ! -f "$extract_dir/metadata.json" ]; then
-            rm -rf "$extract_dir" "$zip_file"
-            continue
-        fi
-
-        local backup_dir="$tmp_root/backup_$uuid"
-        cp -a "$xlet_dir" "$backup_dir" 2>/dev/null
-
-        if rm -rf "$xlet_dir" && cp -a "$extract_dir" "$xlet_dir"; then
-            [ -d "$xlet_dir/schemas" ] && command -v glib-compile-schemas &> /dev/null && \
-                glib-compile-schemas "$xlet_dir/schemas" 2>/dev/null
-        else
-            rm -rf "$xlet_dir"
-            cp -a "$backup_dir" "$xlet_dir" 2>/dev/null
-        fi
-
-        rm -rf "$extract_dir" "$zip_file" "$backup_dir"
-    done
-
-    rm -rf "$tmp_root"
-}
-
 echo -e "${BLUE}======================================================${NC}" >&3
-echo -e "${BLUE}${MSG_TITLE1}${NC}" >&3
+echo -e "${BLUE}${MSG_TITLE}${NC}" >&3
 echo -e "${BLUE}======================================================${NC}" >&3
 echo -e "${YELLOW}${MSG_ASK_PASS}${NC}" >&3
 sudo -v >&3
@@ -176,14 +111,15 @@ while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 SUDO_KEEP_ALIVE_PID=$!
 
 REBOOT_NEEDED=false
-TOTAL_STEPS=20
+FWUPD_RESTART_NEEDED=false
+TOTAL_STEPS=21
 STEP=0
 show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_UPDATE"
 
 # ---------------------------------------------------------------
-# FAZA: AKTUALIZACJA
+# PHASE: UPDATE
 # ---------------------------------------------------------------
-sudo apt-get update 2>&1 | grep -v "nie obsługuje architektury\|Pomijanie pozyskania skonfigurowanego pliku"
+sudo apt-get update 2>&1 | grep -v "nie obsługuje architektury\|Pomijanie pozyskania skonfigurowanego pliku\|does not support architecture\|Skipping acquire of configured file"
 sudo apt-get dist-upgrade -y
 STEP=$((STEP+1)); show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_UPDATE"
 
@@ -192,18 +128,28 @@ if command -v flatpak &> /dev/null; then
 fi
 STEP=$((STEP+1)); show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_UPDATE"
 
-update_gnome_extensions
+if command -v gext &> /dev/null; then
+    gext update
+fi
+STEP=$((STEP+1)); show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_UPDATE"
+
+if command -v cinnamon-spice-updater &> /dev/null; then
+    cinnamon-spice-updater --update-all
+fi
 STEP=$((STEP+1)); show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_UPDATE"
 
 if command -v fwupdmgr &> /dev/null; then
-    sudo fwupdmgr refresh --force 2>/dev/null
-    sudo fwupdmgr get-updates 2>/dev/null
-    sudo fwupdmgr update -y 2>/dev/null
+    sudo fwupdmgr refresh --force
+    FWUPD_OUT=$(sudo fwupdmgr update -y 2>&1)
+    echo "$FWUPD_OUT"
+    if echo "$FWUPD_OUT" | grep -qiE "restart|reboot"; then
+        FWUPD_RESTART_NEEDED=true
+    fi
 fi
 STEP=$((STEP+1)); show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_CLEAN_SYS"
 
 # ---------------------------------------------------------------
-# FAZA: CZYSZCZENIE SYSTEMOWE (SUDO)
+# PHASE: SYSTEM CLEANUP (SUDO)
 # ---------------------------------------------------------------
 sudo apt-get autoremove --purge -y
 STEP=$((STEP+1)); show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_CLEAN_SYS"
@@ -268,13 +214,10 @@ if [ -n "$KERNEL_PACKAGES" ]; then
     sudo apt-get purge $KERNEL_PACKAGES -y
     REBOOT_NEEDED=true
 fi
-STEP=$((STEP+1)); show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_CLEAN_SYS"
-
-sudo update-grub 2>/dev/null
 STEP=$((STEP+1)); show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_CLEAN_USER"
 
 # ---------------------------------------------------------------
-# FAZA: CZYSZCZENIE UŻYTKOWNIKA
+# PHASE: USER CLEANUP
 # ---------------------------------------------------------------
 find ~/.cache -type f -atime +14 \
     ! -path "*/mozilla/*" \
@@ -319,14 +262,17 @@ rm -rf "$HOME/.cache/virt-manager" 2>/dev/null
 STEP=$((STEP+1)); show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_RESTART"
 
 # ---------------------------------------------------------------
-# FAZA: SPRAWDZANIE RESTARTU
+# PHASE: RESTART CHECK
 # ---------------------------------------------------------------
 if [ -f /var/run/reboot-required ]; then
     REBOOT_NEEDED=true
 fi
 STEP=$((STEP+1)); show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_RESTART"
 
-kill "$SUDO_KEEP_ALIVE_PID" 2>/dev/null
+if [ "$FWUPD_RESTART_NEEDED" = true ]; then
+    REBOOT_NEEDED=true
+fi
+STEP=$((STEP+1)); show_progress $STEP $TOTAL_STEPS "$MSG_PHASE_RESTART"
 
 echo -e "\n" >&3
 echo -e "${GREEN}======================================================${NC}" >&3
@@ -335,6 +281,8 @@ echo -e "${GREEN}======================================================${NC}" >&
 
 if [ "$REBOOT_NEEDED" = true ]; then
     echo -e "${YELLOW}${MSG_RESTART_WARN}${NC}" >&3
+    echo -e "${YELLOW}${MSG_PRESS_ENTER}${NC}" >&3
+    read -r
 else
     echo -e "${GREEN}${MSG_NO_RESTART}${NC}" >&3
 fi
