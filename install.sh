@@ -556,7 +556,7 @@ else
 fi
 
 # ==========================================================
-# RESTART SYSTEMU (Prompt)
+# RESTART SYSTEMU 
 # ==========================================================
 if [[ "$SCRIPT_LANG" == "pl" ]]; then
     RESTART_PROMPT="Czy chcesz teraz zrestartować system? [T/N]: "
@@ -576,10 +576,4 @@ if [[ -e /dev/tty ]] && (exec < /dev/tty) 2>/dev/null; then
             exit 0
             ;;
     esac
-else
-    if [[ "$SCRIPT_LANG" == "pl" ]]; then
-        echo -e "${WARN}⚠ Brak terminala interaktywnego - pomijam pytanie o restart. Uruchom 'sudo reboot' ręcznie.${NC}" >&3
-    else
-        echo -e "${WARN}⚠ No interactive terminal - skipping restart prompt. Run 'sudo reboot' manually.${NC}" >&3
-    fi
-fi
+    
