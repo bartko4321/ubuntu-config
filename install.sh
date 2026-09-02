@@ -528,6 +528,10 @@ sudo journalctl --vacuum-time=2d || true
 sudo sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub || true
 sudo update-grub || true
 
+sudo mkdir -p /etc/NetworkManager/conf.d
+echo -e "[main]\ndns=default\nrc-manager=symlink" | sudo tee /etc/NetworkManager/conf.d/dns.conf > /dev/null
+echo -e "[global-dns]\n\n[global-dns-domain-*]\nservers=1.1.1.1,1.0.0.1,2606:4700:4700::1112,2606:4700:4700::1002" | sudo tee /etc/NetworkManager/conf.d/global-dns.conf > /dev/null
+
 ACTIVE_CONN=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -v "^lo" | head -n 1 | cut -d: -f1 || true)
 if [[ -n "$ACTIVE_CONN" ]]; then
     sudo nmcli connection modify "$ACTIVE_CONN" ipv4.dns "1.1.1.1,1.0.0.1" ipv6.dns "2606:4700:4700::1112,2606:4700:4700::1002" || true
@@ -609,17 +613,13 @@ if [[ "$SCRIPT_LANG" == "pl" ]]; then
 else
     RESTART_PROMPT="Do you want to restart the system now? [Y/N]: "
 fi
-
-if [[ -e /dev/tty ]] && (exec < /dev/tty) 2>/dev/null; then
-    echo -en "${INFO}==> ${RESTART_PROMPT}${NC}" >&3
-    RESTART_CHOICE=""
-    read -r RESTART_CHOICE < /dev/tty || true
-    case "$RESTART_CHOICE" in
-        [YyTt]*)
-            systemctl reboot
-            ;;
-        *)
-            exit 0
-            ;;
-    esac
-fi
+echo -en "${INFO}==> ${RESTART_PROMPT}${NC}" >&3
+read -r RESTART_CHOICE < /dev/tty
+case "$RESTART_CHOICE" in
+    [YyTt]*)
+        systemctl reboot
+        ;;
+    *)
+        exit 0
+        ;;
+esac
