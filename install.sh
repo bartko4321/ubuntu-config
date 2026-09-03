@@ -585,11 +585,6 @@ apiEnabled=false
 EOF
 fi
 
-if [[ -d "$SCRIPT_DIR/bleachbit" ]]; then
-    sudo mkdir -p /root/.config/bleachbit
-    sudo cp -af "$SCRIPT_DIR/bleachbit/." /root/.config/bleachbit/
-fi
-
 show_progress 12 $TOTAL_STEPS "$MSG_PHASE_3"
 echo -e "\n" >&3
 
