@@ -49,31 +49,28 @@ The script performs a full system deployment divided into several logical stages
 
 ---
 
-## 🚀 How to Run
+🚀 How to Run
 
-The script **cannot** be run directly from the `root` account (via `su` or `sudo ./install.sh`). Run it as a regular user with `sudo` privileges. The script will ask for your password once, then temporarily remove the password requirement for installation processes to run uninterrupted.
-
-### Step 1: Clone the repository or download the files
+Step 1: Clone the repository or download the files
 ```bash
 git clone https://github.com/syscore88/ubuntu-config.git
 ```
 
-### Step 2: Enter the downloaded folder
+Step 2: Enter the downloaded folder
 ```bash
 cd Ubuntu-config
 ```
 
-### Step 3: Make the script executable
+Step 3: Make the script executable
 ```bash
 chmod +x install.sh
 ```
 
-### Step 4: Run the script
-```bash
-./install.sh
-```
-
-Once the process is complete, the computer will restart automatically. After logging in, you'll be greeted by a fully configured ZSH environment and a customized gnome desktop!
+4. Run the script
+⚠️ **IMPORTANT:** Run the script as a **regular user** (NOT as root/sudo). The script will ask for the administrator password at the start to configure          temporary elevated privileges.
+ ```bash
+ ./install.sh
+ ```
 
 ### ☕ Support the Project
 
